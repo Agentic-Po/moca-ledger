@@ -110,8 +110,14 @@ def _load_json(path, default):
     return default
 
 
-def _moves(prev, cur, role, T):
-    """Yield (kind, token, delta, new_balance) for every reportable change."""
+def _moves(prev, cur, role, T, receipt_alert=True):
+    """Yield (kind, token, delta, new_balance) for every reportable change.
+
+    `receipt_alert` comes from the watch entry (default on). It used to read a
+    `meta` name that was never bound anywhere in this module: the first receipt
+    at an exchange_deposit address would have raised NameError, and run.py would
+    have swallowed the whole polling pass as a soft-fail — losing exactly the
+    finding this watch exists to produce, at exactly the moment it matters."""
     if not prev:
         return
     for sym in ("eth", "moca", "weth", "usdc", "mente"):
@@ -119,7 +125,8 @@ def _moves(prev, cur, role, T):
         d = b - a
         if d <= -float(T.get(f"drop_{sym}", DEFAULTS[f"drop_{sym}"])):
             yield ("drop", sym, d, b)
-        elif d >= float(T.get("deposit_min", DEFAULTS["deposit_min"])) and role == "exchange_deposit" and meta.get("receipt_alert", True):
+        elif (d >= float(T.get("deposit_min", DEFAULTS["deposit_min"]))
+              and role == "exchange_deposit" and receipt_alert):
             yield ("deposit", sym, d, b)
 
 
@@ -129,16 +136,17 @@ def poll(root=ROOT, thresholds=None, quiet=False, write=True):
     T = dict(DEFAULTS)
     T.update(thr.get("balance_watch", {}) if isinstance(thr.get("balance_watch"), dict) else {})
     doc = _load_json(WATCH_FILE if root == ROOT else os.path.join(root, "labels", "exit_watch.json"), {})
-    entries = [(e["address"].lower(), e.get("role", "sink")) for e in doc.get("addresses", [])]
+    entries = [(e["address"].lower(), e.get("role", "sink"), bool(e.get("receipt_alert", True)))
+               for e in doc.get("addresses", [])]
     state_path = STATE_FILE if root == ROOT else os.path.join(root, "detect", "balances.json")
     state = _load_json(state_path, {})
     t0 = time.time()
     budget = float(T["budget_s"])
     moved = {}                                 # addr -> list of (kind, token, delta, new)
     ok = skipped = 0
-    for i, (addr, role) in enumerate(entries):
+    for i, (addr, role, receipt_alert) in enumerate(entries):
         if time.time() - t0 > budget - 5:      # out of budget: rest keep old readings
-            for a2, _ in entries[i:]:
+            for a2, _, _ra in entries[i:]:
                 cur = state.get(a2, {})
                 cur["stale"] = int(cur.get("stale", 0)) + 1
                 state[a2] = cur
@@ -156,19 +164,19 @@ def poll(root=ROOT, thresholds=None, quiet=False, write=True):
             skipped += 1
             continue
         cur["stale"] = 0
-        hits = list(_moves(prev, cur, role, T))
+        hits = list(_moves(prev, cur, role, T, receipt_alert))
         if hits:
             moved[addr] = hits
         state[addr] = cur
-    state = {a: state[a] for a, _ in entries if a in state}   # prune de-listed
+    state = {a: state[a] for a, _, _ra in entries if a in state}   # prune de-listed
     if write:
         tmp = state_path + ".tmp"
         json.dump(state, open(tmp, "w"), indent=1, sort_keys=True)
         os.replace(tmp, state_path)
 
-    roles = dict(entries)
+    roles = {a: r for a, r, _ra in entries}
     evidence = [["address", "role", "eth", "moca", "weth", "usdc", "mente", "stale"]]
-    for a, _ in entries:
+    for a, _r, _ra in entries:
         s = state.get(a, {})
         evidence.append([a[:10], roles.get(a, "?"),
                          f"{s.get('eth', 0):.4f}", f"{s.get('moca', 0):,.1f}",

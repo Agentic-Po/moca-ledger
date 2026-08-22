@@ -31,6 +31,22 @@ def reply(text, to=None):
     if to: p["reply_to_message_id"] = to
     return api("sendMessage", **p)
 
+def _deny(uid, mid):
+    """Fail closed, but never a dead end.
+
+    TELEGRAM_ACK_USER_IDS is a repo secret only an admin can edit, so a colleague who
+    types `contained` and gets a bare "not authorised" has no route in at all. Name who
+    can add them, and hand them the one value that needs adding — their own numeric id,
+    which they otherwise have no way to look up."""
+    return reply(
+        "\U0001f512 <b>Not authorised — nothing was changed.</b>\n"
+        "Only people on the on-call list can change a case. Reading is open to everyone: "
+        "<code>/cases</code> and <code>/status</code> still work.\n\n"
+        f"To be added, ask <b>{_owner_name()}</b>. Your Telegram user id is "
+        f"<code>{uid or 'unknown'}</code> \u2014 that is all they need; adding you is one "
+        "line, in the repo README under \u201cWho can change a case\u201d.", mid)
+
+
 def _owner_name():
     try:
         return json.loads((ROOT / "detect" / "thresholds.json").read_text()).get("escalation_owner", "the on-call")
@@ -161,7 +177,7 @@ def handle(s, m):
     mid  = m.get("message_id")
     # fail CLOSED: with no authorised list configured nobody may change state
     allowed = bool(ACK()) and uid in ACK()
-    deny = lambda: reply(f"Only the on-call can change a case. Ask {_owner_name()} to be added.", mid)
+    deny = lambda: _deny(uid, mid)
     rk, rf = find_by_reply(s, m)
 
     if not text.startswith("/"):

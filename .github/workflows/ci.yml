@@ -14,6 +14,8 @@ jobs:
       - run: pip install -q -r requirements.txt
       - name: PII gate
         run: python3 tests/test_pii.py --tree .
+      - name: State gate (size cap, restore fallback, no enrichment re-dispatch)
+        run: python3 tests/test_state.py
       - name: Detector gate (replay deadlines + benign windows + parity)
         env: { MINDSET_SALT: "${{ secrets.MINDSET_SALT }}" }
         run: python3 tests/test_gate.py

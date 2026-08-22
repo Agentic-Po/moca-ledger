@@ -1,5 +1,5 @@
 {
- "version": "2026-08-22.2",
+ "version": "2026-08-23.1",
  "note": "committed defaults; live values may be overridden at runtime by the THRESHOLDS_JSON env var (shadow mode). CI always tests these defaults.",
  "unit_frozen": 115.0,
  "conc_window_h": 6,
@@ -43,6 +43,8 @@
  "outflow_x_field": 8,
  "composite_min_signals": 2,
  "composite_window_h": 6,
+ "incident_mode_min": 3,
+ "incident_mode_note": "more than this many loud (page/notify) findings pending in one run switches notify/telegram.py to incident mode: one loud header, every finding silent beneath it. See the council decision of 2026-08-23.",
  "balance_watch": {
   "note": "exit-leg balance watch floors (S-X). drop_* = minimum decrease that fires notify, in token units; MENTE uses the MOCA-equivalent floor. deposit_min = any receipt above this at an exchange_deposit address fires notify.",
   "drop_moca": 1000,
@@ -54,6 +56,6 @@
   "pace_s": 1.0,
   "budget_s": 90
  },
- "escalation_owner": "Po (interim) \u2014 @Po_Chu on Telegram",
+ "escalation_owner": "Po (interim) — @Po_Chu on Telegram",
  "escalation_note": "Interim owner until platform names someone who can pause a creator's reward. Replace both fields together."
 }

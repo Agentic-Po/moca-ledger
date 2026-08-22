@@ -12,6 +12,7 @@ Flags: --dry-run (no writes), --quiet (counts only on stdout — public Actions
 logs are world-readable), --as-of <block> (replay parity), --loop-if-hot.
 """
 import argparse
+import bisect
 import csv
 import datetime as dt
 import json
@@ -21,7 +22,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import signals as S
-from signals import Ctx, evaluate, episodes, summary, utc, SLOT, DAY
+from signals import Ctx, evaluate, episodes, summary, ts_of, utc, SLOT, DAY
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE = os.path.join(ROOT, "alerts", "state.json")
@@ -74,10 +75,93 @@ def current_findings(ctx):
     return out
 
 
+# ---------------------------------------------------------------- money per finding
+# Two numbers per finding, never a history array: alerts/state.json is restored
+# through the GitHub Contents API, which stops returning inline content above
+# 1 MB, and every field here multiplies by ~430 open findings.
+MONEY_FIELDS = ("moca_since", "rate_per_h")
+
+
+def _wallet(key):
+    """The wallet a finding is keyed on, or None when the key is not one.
+
+    Platform-wide and band-scoped findings ('platform', 'platform:equip') have no
+    entity to total, and the balance watch keys on 'exit:<address>'."""
+    k = str(key or "").lower()
+    if k.startswith("exit:"):
+        k = k[5:]
+    return k if k.startswith("0x") and len(k) == 42 else None
+
+
+def paid_index(ctx):
+    """wallet -> ascending [(ts, moca)] of Treasury payouts to it.
+
+    Treasury payouts only — this is money leaving the Treasury, which is the
+    quantity the whole floor exists to watch. It is NOT 'everything this wallet
+    received': a fan-in collector is paid by other Minds, not by the Treasury,
+    and totalling those here would put two different meanings behind one number.
+    The payment TYPE is still inferred from size on-chain (type_verified is
+    False everywhere), which is why every rendered money line carries that hedge."""
+    idx = {}
+    for ts, to, v, band, tx in ctx.pay:
+        idx.setdefault(to, []).append((ts, v))
+    for lst in idx.values():
+        lst.sort()
+    return idx
+
+
+def moca_since(idx, wallet, since_ts, now_ts):
+    """(total MOCA paid to wallet since since_ts, MOCA per hour) or (None, None).
+
+    None — not zero — when there is nothing to report, so the renderer omits the
+    money line instead of printing an authoritative-looking 0."""
+    lst = idx.get(wallet)
+    if not lst or since_ts is None:
+        return None, None
+    lo = bisect.bisect_left(lst, (since_ts, float("-inf")))
+    total = sum(v for _, v in lst[lo:])
+    if total <= 0:
+        return None, None
+    hours = max((now_ts - since_ts) / 3600.0, 1 / 6.0)   # a single slot is the floor
+    return round(total, 1), round(total / hours, 1)
+
+
+def _onset(d, cur):
+    """First time we saw this finding, pinned across runs.
+
+    The episode reducer re-stamps first_ts from the latest fire every run, so
+    without this the 'since' in a money line would creep forward and understate
+    a long-running case. utc() strings sort chronologically."""
+    onset = d.get("episode_first") or d.get("first_ts")
+    prev = (cur or {}).get("first_ts")
+    if prev and (not onset or str(prev) < str(onset)):
+        onset = prev
+    return onset
+
+
+def _apply_money(target, d, idx, ctx):
+    """Set or REMOVE moca_since/rate_per_h on target. Removing matters: a stale
+    total left behind from a previous run would be rendered as if it were current."""
+    w = _wallet(d.get("key"))
+    total = rate = None
+    if w:
+        try:
+            since = ts_of(str(d.get("first_ts")).replace(" ", "T"))
+        except Exception:
+            since = None
+        total, rate = moca_since(idx, w, since, ctx.t1)
+    if total is None:
+        for k in MONEY_FIELDS:
+            target.pop(k, None)
+    else:
+        target["moca_since"], target["rate_per_h"] = total, rate
+
+
 def diff_state(state, findings, ctx, fresh_h=24):
     """New findings or escalations -> state['open'] with pending_send. Findings whose
     episode ended more than fresh_h ago are recorded as backfill (never sent)."""
     new, escalated = [], []
+    idx = paid_index(ctx)
     for fid, f in findings.items():
         d = f._state
         d["mindset_source"] = ctx.mindset_source
@@ -86,6 +170,8 @@ def diff_state(state, findings, ctx, fresh_h=24):
         d["owner"] = ctx.thr.get("escalation_owner") or d.get("owner") or "UNASSIGNED"
         stale = (ctx.t1 - f.ts) > fresh_h * 3600
         cur = state["open"].get(fid)
+        d["first_ts"] = _onset(d, cur)
+        _apply_money(d, d, idx, ctx)
         if cur is None:
             d["pending_send"] = not stale
             d["backfill"] = stale
@@ -102,6 +188,11 @@ def diff_state(state, findings, ctx, fresh_h=24):
             prev_value = cur.get("value")
             cur.update(d)
             cur.update(keep)
+            for k in MONEY_FIELDS:          # absent in d means "nothing to report now"
+                if k in d:
+                    cur[k] = d[k]
+                else:
+                    cur.pop(k, None)
             status = cur.get("status")
             if status == "closed":
                 pass                                      # a closed case stays closed until reopened
@@ -228,6 +319,17 @@ def one_pass(a):
                 findings[f.id] = f
         except Exception as e:  # fail-soft: the ledger signals must still land
             print(f"balance_watch: soft-fail ({type(e).__name__})")
+    # ---- USD price cache: one fetch a day, committed, never blocking. Same
+    # no-network guard as the balance watch so replay/CI stay offline and
+    # byte-identical. A failure here only costs the "(~$…)" half of a money line.
+    if not (a.dry_run or a.as_of is not None or os.environ.get("SKIP_PRICE_FETCH")
+            or os.environ.get("SKIP_BALANCE_WATCH")):
+        try:
+            import price
+            changed, note = price.refresh()
+            print(note)
+        except Exception as e:            # fail-soft, but say so — never silently
+            print(f"price: soft-fail ({type(e).__name__})")
     state = load_state()
     new, escalated = diff_state(state, findings, ctx)
     n_inc = 0

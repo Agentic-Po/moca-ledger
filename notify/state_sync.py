@@ -10,7 +10,7 @@ Falls back to whatever is on disk when no token is present (local runs), and
 degrades loudly rather than silently: if a pull fails in CI the run stops before
 notifying, because a stateless run re-sends everything.
 """
-import base64, json, os, pathlib, sys, urllib.request
+import base64, json, os, pathlib, sys, time, urllib.error, urllib.request
 
 ROOT   = pathlib.Path(__file__).resolve().parent.parent
 STATE  = ROOT / "alerts" / "state.json"
@@ -34,33 +34,71 @@ def _req(method, body=None):
                                         "Content-Type": "application/json"})
     return json.load(urllib.request.urlopen(r, timeout=30))
 
-MAX_OPEN   = 600          # findings kept in `open`; older resolved ones move to a counter
+MAX_OPEN   = 600          # findings kept in `open`; older settled ones move to a counter
 KEEP_MSGS  = 300          # message_id -> case entries kept for reply targeting
+MAX_BYTES  = 900_000      # the Contents API stops serving inline content at 1 MB
+MIN_KEEP   = 50           # floor: never let the byte budget empty the state
+
+
+def _settled(f):
+    return bool(f.get("status") in ("closed",) or f.get("ack_by") or f.get("ack_role"))
+
+
+def _size(state):
+    return len(json.dumps(state, indent=1).encode())
 
 
 def prune(state):
     """Keep the state small enough that the Contents API will still serve it.
 
-    Above ~1 MB GitHub stops returning inline content and the restore fails, which
-    stops the detector during exactly the incident it exists for. Resolved and
-    acknowledged findings age out; the count they represent is kept."""
-    import datetime as dt
-    open_f = state.get("open") or {}
-    if len(open_f) <= MAX_OPEN and len(state.get("by_message") or {}) <= KEEP_MSGS:
-        return state
-    def sort_key(item):
-        f = item[1]
-        settled = bool(f.get("status") in ("closed",) or f.get("ack_by") or f.get("ack_role"))
-        return (0 if not settled else 1, str(f.get("first_ts") or ""))
-    keep = dict(sorted(open_f.items(), key=sort_key, reverse=False)[:MAX_OPEN])
-    dropped = len(open_f) - len(keep)
-    if dropped > 0:
-        state["retired"] = (state.get("retired") or 0) + dropped
-        state["open"] = keep
-        print(f"state: retired {dropped} settled findings (kept {len(keep)})")
+    Above ~1 MB GitHub stops returning inline content and the restore falls back to
+    download_url; above that the state is unwieldy either way, and losing it stops
+    the detector during exactly the incident it exists for. Two independent limits:
+
+      * a COUNT limit (MAX_OPEN / KEEP_MSGS), and
+      * a BYTE limit, because the count alone guarantees nothing — every field added
+        to a finding multiplies by the number of open findings (~430 today).
+
+    Settled findings (closed, or acked by a person) age out newest-first; the count
+    they represent is kept in `retired` so nothing is dropped without being said."""
     bm = state.get("by_message") or {}
     if len(bm) > KEEP_MSGS:
         state["by_message"] = dict(list(bm.items())[-KEEP_MSGS:])
+        print(f"state: trimmed by_message to the last {KEEP_MSGS} entries")
+
+    open_f = state.get("open") or {}
+    newest_first = lambda it: str(it[1].get("first_ts") or it[1].get("ts") or "")
+    live    = sorted((it for it in open_f.items() if not _settled(it[1])), key=newest_first, reverse=True)
+    settled = sorted((it for it in open_f.items() if     _settled(it[1])), key=newest_first, reverse=True)
+    order   = live + settled                      # drop from the tail: oldest settled first
+    keep, dropped = order[:MAX_OPEN], order[MAX_OPEN:]
+
+    over = False
+    while keep:                                   # byte budget, enforced not assumed
+        state["open"] = dict(keep)
+        if _size(state) <= MAX_BYTES:
+            break
+        if len(keep) <= MIN_KEEP:
+            over = True; break                    # something other than `open` is the bulk
+        cut = max(1, min(len(keep) - MIN_KEEP, len(keep) // 10))
+        dropped += keep[-cut:]
+        keep = keep[:-cut]
+
+    if over:
+        print(f"state: WARNING — still {_size(state)} bytes with only {len(keep)} findings kept; "
+              f"the bulk is NOT the finding list. Restore will fall back to download_url.")
+    if not dropped:
+        state["open"] = open_f                    # unchanged: do not churn key order
+        return state
+    state["open"] = dict(keep)
+    state["retired"] = (state.get("retired") or 0) + len(dropped)
+    live_dropped = sum(1 for _, f in dropped if not _settled(f))
+    print(f"state: retired {len(dropped)} finding(s) to stay under the size cap "
+          f"(kept {len(keep)}, {_size(state)} bytes)")
+    if live_dropped:
+        # Loud on purpose: this is a finding nobody acknowledged being forgotten.
+        print(f"state: WARNING — {live_dropped} of them were still UNACKNOWLEDGED; "
+              f"the state is at its size ceiling and open cases are being aged out")
     return state
 
 
@@ -74,8 +112,13 @@ def pull():
             raw = base64.b64decode(d["content"])
         else:                                    # >1 MB: the API omits inline content
             url = d.get("download_url")
+            if not url:
+                print("state: PULL FAILED (no inline content and no download_url) — refusing to run stateless")
+                return False
             raw = urllib.request.urlopen(urllib.request.Request(
                 url, headers={"Authorization": f"Bearer {_pat()}"}), timeout=30).read()
+            print(f"state: inline content omitted (>1 MB) — restored {len(raw)} bytes via download_url")
+        json.loads(raw)                          # never write a file we cannot parse
         STATE.parent.mkdir(parents=True, exist_ok=True)
         STATE.write_bytes(raw)
         (STATE.parent / ".state_sha").write_text(d["sha"])
@@ -89,23 +132,48 @@ def pull():
     except Exception as e:
         print(f"state: PULL FAILED ({type(e).__name__}) — refusing to run stateless"); return False
 
+
+def _remote_sha():
+    try:
+        return (_req("GET") or {}).get("sha")
+    except Exception:
+        return None
+
+
 def push():
-    """Store the updated state back in the private repo."""
+    """Store the updated state back in the private repo.
+
+    Retries, and refreshes the blob sha on a conflict: a dropped push means the next
+    run re-pulls an older copy, re-sends alerts the human already handled and
+    re-dispatches enrichment. Returns False loudly rather than pretending it worked."""
     if not _pat() or not STATE.exists():
         print("state: nothing to push"); return True
     st = prune(json.loads(STATE.read_text()))
     STATE.write_text(json.dumps(st, indent=1))
-    body = {"message": f"state {os.environ.get('GITHUB_RUN_ID','local')}",
-            "content": base64.b64encode(STATE.read_bytes()).decode()}
+    content = base64.b64encode(STATE.read_bytes()).decode()
     sha_f = STATE.parent / ".state_sha"
-    if sha_f.exists(): body["sha"] = sha_f.read_text().strip()
-    try:
-        d = _req("PUT", body)
-        (STATE.parent / ".state_sha").write_text(d["content"]["sha"])
-        print(f"state: pushed {len(json.loads(STATE.read_text()).get('open', {}))} findings")
-        return True
-    except Exception as e:
-        print(f"state: push failed ({type(e).__name__}) — next run will re-pull the older copy"); return False
+    sha = sha_f.read_text().strip() if sha_f.exists() else None
+    detail = "unknown"
+    for attempt in range(3):
+        body = {"message": f"state {os.environ.get('GITHUB_RUN_ID','local')}", "content": content}
+        if sha: body["sha"] = sha
+        try:
+            d = _req("PUT", body)
+            sha_f.write_text(d["content"]["sha"])
+            print(f"state: pushed {len(st.get('open', {}))} findings, {STATE.stat().st_size} bytes")
+            return True
+        except urllib.error.HTTPError as e:
+            detail = f"http {e.code}"
+            if e.code in (409, 422):          # our sha is stale — refresh it and retry
+                sha = _remote_sha()
+        except Exception as e:
+            detail = type(e).__name__
+        if attempt < 2:
+            time.sleep(2 * (attempt + 1))
+    print(f"state: PUSH FAILED ({detail}) after 3 attempts — the next run will re-pull an "
+          f"older copy and may re-send handled alerts")
+    return False
+
 
 if __name__ == "__main__":
     ok = pull() if sys.argv[1:] == ["pull"] else push()

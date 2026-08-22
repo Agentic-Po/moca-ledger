@@ -34,6 +34,8 @@ jobs:
         id: crawl
         run: python3 crawl.py 2>&1 | tail -5
 
+      # NEVER add `|| true` here. A failed restore means a stateless run, which
+      # re-sends every finding the human already handled. It must stop the job.
       - name: Restore detector memory (private repo)
         env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
         run: python3 notify/state_sync.py pull
@@ -60,22 +62,15 @@ jobs:
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_ACK_USER_IDS: ${{ secrets.TELEGRAM_ACK_USER_IDS }}
         run: |
-          python3 notify/commands.py || true
-          python3 notify/watchdog.py || true
+          python3 notify/commands.py
+          python3 notify/watchdog.py || echo "watchdog: non-zero exit (advisory only, not fatal)"
           python3 notify/telegram.py --send-pending
 
 
       - name: Save detector memory (private repo)
         if: always()
         env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
-        run: python3 notify/state_sync.py push || true
-
-      - name: Request tier-2 enrichment (private side)
-        if: success()
-        continue-on-error: true
-        env:
-          PRIVATE_REPO_PAT: ${{ secrets.PRIVATE_REPO_PAT }}
-        run: python3 notify/request_enrichment.py
+        run: python3 notify/state_sync.py push
 
       - name: Commit state
         run: |
@@ -87,6 +82,14 @@ jobs:
             git pull --rebase -q origin main || git rebase --abort || true
             git push -q origin main && break || sleep 5
           done
+
+      # After the commit on purpose: a rejected dispatch or a dropped state push is
+      # a real error and goes red, but it must not cost the crawl its commit.
+      - name: Request tier-2 enrichment (private side)
+        if: success()
+        env:
+          PRIVATE_REPO_PAT: ${{ secrets.PRIVATE_REPO_PAT }}
+        run: python3 notify/request_enrichment.py
 
       - name: Heartbeat ping (success)
         if: success()

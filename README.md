@@ -20,6 +20,8 @@ organic baselines computed from the same ledger.
 | `detect/` | Detector code, aggregate organic baselines, salted-hash address sets |
 | `labels/` | Public infrastructure addresses (treasury, reward source, cognition sink, AMMs) and campaign windows |
 | `tests/test_pii.py` | Gate that fails the build if anything privacy-sensitive enters the tree |
+| `tests/test_state.py` | Gate on the detector's memory: size cap, restore fallback, no enrichment re-dispatch |
+| `notify/selftest.py` | Daily end-to-end proof that an alert can still reach the channel |
 | `.github/workflows/` | 10-minute crawl + detect + notify loop, CI, monthly archive |
 
 Timestamps are derived from Base's fixed 2 s block time (verified exact over 2M blocks),
@@ -38,6 +40,26 @@ hashes**; the salt is an Actions secret. `tests/test_pii.py` enforces this on ev
 python3 crawl.py                # catch up to chain tip (resumable via state.json)
 python3 tests/test_pii.py --tree .
 ```
+
+## Who can change a case
+
+The Telegram bot **informs; it never acts on the platform**. The only thing a person can
+change through it is a case's status (`reported` · `contained` · `watching` · `closed`),
+and that is restricted to the numeric Telegram user ids in the `TELEGRAM_ACK_USER_IDS`
+repo secret. Authorisation **fails closed**: if the secret is unset or empty, nobody can
+change anything. Reading (`/cases`, `/status`) stays open to everyone in the group.
+
+Adding a colleague is one line. Have them send anything to the bot first — the refusal
+reply tells them their own numeric user id, which they have no other way to look up. Then
+a repo admin runs:
+
+```bash
+gh secret set TELEGRAM_ACK_USER_IDS -R Agentic-Po/moca-ledger -b "<existing ids>,<new id>"
+```
+
+The value is a comma- or space-separated list and **replaces** the whole list, so include
+the ids already there. Only a repo admin can set it — that is the point, and it is why the
+refusal message names who to ask rather than just saying no.
 
 ## Status
 

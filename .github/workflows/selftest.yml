@@ -1,0 +1,71 @@
+name: selftest
+
+# Quiet is indistinguishable from dead. The crawl workflow can stay green for days
+# while the alerting path underneath it is broken — a bad token, a broken renderer,
+# a state file that no longer restores — and nobody finds out until an incident
+# needs the channel. This exercises the whole path once a day with a synthetic
+# finding, checks the Telegram and GitHub API responses rather than the absence of
+# an exception, and removes every trace of itself.
+#
+# It takes no action on the platform and posts nothing to the channel on success.
+
+on:
+  schedule:
+    - cron: "20 1 * * *"      # 01:20 UTC daily = 09:20 Hong Kong, so a failure is read the same morning
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: selftest
+  cancel-in-progress: false
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+
+      - name: Install deps
+        run: pip install -q -r requirements.txt
+
+      # Restore first so the size-budget check below runs against the REAL state,
+      # not a skipped no-op. This job never commits, so nothing is written back.
+      - name: Restore detector memory (private repo)
+        env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
+        run: python3 notify/state_sync.py pull
+
+      # If these fail, the end-to-end legs below would only tell us something is
+      # wrong, not what. Includes the live check that MAX_OPEN findings at today's
+      # average size still fit under the 1 MB Contents-API ceiling.
+      - name: State and enrichment checks (against the live state)
+        run: python3 tests/test_state.py
+
+      - name: End-to-end alerting self-test
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          PRIVATE_REPO_PAT:   ${{ secrets.PRIVATE_REPO_PAT }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 notify/selftest.py
+
+      # Belt and braces: the script cleans up in its own `finally`, but if the
+      # process is killed (timeout, cancellation) that never runs. This does.
+      - name: Sweep synthetic state (always)
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          PRIVATE_REPO_PAT:   ${{ secrets.PRIVATE_REPO_PAT }}
+        run: python3 notify/selftest.py --sweep
+
+      - name: Heartbeat ping (failure)
+        if: failure()
+        env: { HC_PING_URL: "${{ secrets.HC_PING_URL }}" }
+        run: curl -fsS -m 10 --retry 2 "$HC_PING_URL/fail" > /dev/null || echo "heartbeat ping failed too"
