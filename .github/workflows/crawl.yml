@@ -65,32 +65,10 @@ jobs:
 
       - name: Request tier-2 enrichment (private side)
         if: success()
+        continue-on-error: true
         env:
           PRIVATE_REPO_PAT: ${{ secrets.PRIVATE_REPO_PAT }}
-        run: |
-          [ -z "$PRIVATE_REPO_PAT" ] && { echo "no PAT — private side will pick it up on its hourly pass"; exit 0; }
-          ids=$(python3 - <<'PY2'
-import json,pathlib
-s=json.loads(pathlib.Path("alerts/state.json").read_text())
-ids=[f.get("id") for f in (s.get("open") or {}).values()
-     if f.get("tier") in ("page","notify") and not f.get("pending_send")
-     and f.get("ack_by")!="go-live-seed" and not f.get("enrich_requested")]
-print(" ".join(i for i in ids if i)[:400])
-PY2
-)
-          for id in $ids; do
-            curl -sS -X POST -H "Authorization: Bearer $PRIVATE_REPO_PAT" -H "Accept: application/vnd.github+json" \
-              https://api.github.com/repos/Agentic-Po/moca-ledger-private/dispatches \
-              -d "{\"event_type\":\"finding\",\"client_payload\":{\"finding_id\":\"$id\"}}" -o /dev/null -w "dispatch $id: %{http_code}\n"
-          done
-          python3 - <<'PY3'
-import json,pathlib
-p=pathlib.Path("alerts/state.json"); s=json.loads(p.read_text())
-for f in (s.get("open") or {}).values():
-    if f.get("tier") in ("page","notify") and not f.get("pending_send") and f.get("ack_by")!="go-live-seed":
-        f["enrich_requested"]=True
-p.write_text(json.dumps(s,indent=1))
-PY3
+        run: python3 notify/request_enrichment.py
 
       - name: Heartbeat ping (success only)
         if: success()
