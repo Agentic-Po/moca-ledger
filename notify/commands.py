@@ -7,7 +7,7 @@ commands are always delivered to bots.
 
 Only user ids listed in TELEGRAM_ACK_USER_IDS may change state.
 """
-import json, os, pathlib, sys, urllib.parse, urllib.request, datetime as dt
+import json, os, pathlib, re, sys, urllib.parse, urllib.request, datetime as dt
 
 ROOT  = pathlib.Path(__file__).resolve().parent.parent
 STATE = ROOT / "alerts" / "state.json"
@@ -33,6 +33,17 @@ def reply(text, to=None):
 
 def load(): return json.loads(STATE.read_text()) if STATE.exists() else {"open": {}, "telegram_offset": 0}
 def save(s): STATE.write_text(json.dumps(s, indent=1))
+
+def find_by_reply(s, m):
+    """Which case is this message a reply to? Telegram delivers replies to the bot
+    even with privacy mode on, so replying to an alert is the natural way to act on it."""
+    r = m.get("reply_to_message") or {}
+    mid = r.get("message_id")
+    if not mid: return None, None
+    fid = (s.get("by_message") or {}).get(str(mid))
+    if fid: return find(s, fid)
+    return None, None
+
 
 def find(s, ident):
     ident = (ident or "").strip().lower()
@@ -120,11 +131,42 @@ def main():
         s["telegram_offset"] = max(int(s.get("telegram_offset") or 0), int(u.get("update_id", 0)))
         m = u.get("message") or {}
         text = (m.get("text") or "").strip()
-        if not text.startswith("/"): continue
+        if not text.startswith("/"):
+            rk, rf = find_by_reply(s, m)
+            if not rf: continue
+            low = text.lower()
+            # Whole words only, checked in a fixed order. A substring scan is dangerous
+            # here: "attack" contains "ack", so "this looks like an attack" would have
+            # silenced the very case it was reporting.
+            WORDS = [("contained", "contained"), ("fixed", "contained"),
+                     ("reported", "reported"), ("escalated", "reported"),
+                     ("closed", "closed"), ("resolved", "closed"),
+                     ("watching", "watching"), ("noted", "watching")]
+            word = st = None
+            for w, mapped in WORDS:
+                if re.search(rf"\b{w}\b", low):
+                    word, st = w, mapped
+                    break
+            if word and re.search(rf"\bnot\s+{word}\b", low):   # "reported, not contained"
+                word = st = None
+            if not ((not ACK()) or uid in ACK()):
+                reply("not authorised", m.get("message_id")); continue
+            set_status(s, rf.get("id"), st, uid, text[:300])
+            icon, meaning = STATUSES.get(st, ("👀", ""))
+            extra = {"reported": "I will stay quiet unless it keeps growing.",
+                     "contained": "Any further activity will page you — that would mean the fix did not hold.",
+                     "closed": "Removed from open cases; still in the record.",
+                     "watching": "No repeats; I will tell you if it changes materially."}.get(st, "")
+            reply(f"{icon} recorded as <b>{st}</b> for this case ({meaning})\n{extra}", m.get("message_id"))
+            changed += 1
+            continue
         uid = str((m.get("from") or {}).get("id", "")); mid = m.get("message_id")
         cmd, *args = text.split()
         cmd = cmd.split("@")[0].lower()
         allowed = (not ACK()) or uid in ACK()
+        rk, rf = find_by_reply(s, m)
+        if rf and (not args or not find(s, args[0])[1]):
+            args = [rf.get("id")] + list(args)          # replying supplies the case id
         if cmd == "/status":
             reply(status_text(s), mid)
         elif cmd == "/help":

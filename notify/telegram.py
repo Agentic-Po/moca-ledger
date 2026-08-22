@@ -106,6 +106,17 @@ def _suppressed(f, s):
     return None
 
 
+def _chunks(text, limit):
+    """Split on line boundaries so an HTML tag is never cut in half."""
+    out, cur = [], ""
+    for line in text.split("\n"):
+        if len(cur) + len(line) + 1 > limit and cur:
+            out.append(cur); cur = ""
+        cur += (("\n" if cur else "") + line)
+    if cur: out.append(cur)
+    return out or [text]
+
+
 def send_pending():
     """Send findings marked pending in alerts/state.json (written by detect/run.py)."""
     s = load_state()
@@ -121,6 +132,10 @@ def send_pending():
         save_state(s)                                       # commit intent BEFORE sending
         r = send(render(f), photo=f.get("view_png"))
         f["send_ok"] = bool(r.get("ok")); f["send_error"] = None if r.get("ok") else str(r.get("error"))[:80]
+        mid = (r.get("result") or {}).get("message_id")
+        if mid:
+            f["tg_message_id"] = mid
+            s.setdefault("by_message", {})[str(mid)] = f.get("id")   # reply -> case lookup
         save_state(s)
         print(f["tier"], f.get("signal"), "->", r.get("ok"))
     failed = [f for f in s.get("open", {}).values() if f.get("send_ok") is False]
@@ -137,7 +152,14 @@ def send_pending():
         except ImportError:
             from notify.explain import digest as fmt_digest
         body = fmt_digest(digest)
-        send(body, silent=True); save_state(s)
+        r = None
+        for chunk in _chunks(body, 3800):        # never truncate mid-tag: HTML would 400
+            r = send(chunk, silent=True)
+        if not (r or {}).get("ok"):
+            for f in digest:                     # not delivered -> keep it pending
+                f["pending_send"] = True
+            print("digest: send failed, left pending")
+        save_state(s)
     return 0
 
 def failure(url):

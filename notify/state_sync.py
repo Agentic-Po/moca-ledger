@@ -34,13 +34,48 @@ def _req(method, body=None):
                                         "Content-Type": "application/json"})
     return json.load(urllib.request.urlopen(r, timeout=30))
 
+MAX_OPEN   = 600          # findings kept in `open`; older resolved ones move to a counter
+KEEP_MSGS  = 300          # message_id -> case entries kept for reply targeting
+
+
+def prune(state):
+    """Keep the state small enough that the Contents API will still serve it.
+
+    Above ~1 MB GitHub stops returning inline content and the restore fails, which
+    stops the detector during exactly the incident it exists for. Resolved and
+    acknowledged findings age out; the count they represent is kept."""
+    import datetime as dt
+    open_f = state.get("open") or {}
+    if len(open_f) <= MAX_OPEN and len(state.get("by_message") or {}) <= KEEP_MSGS:
+        return state
+    def sort_key(item):
+        f = item[1]
+        settled = bool(f.get("status") in ("closed",) or f.get("ack_by") or f.get("ack_role"))
+        return (0 if not settled else 1, str(f.get("first_ts") or ""))
+    keep = dict(sorted(open_f.items(), key=sort_key, reverse=False)[:MAX_OPEN])
+    dropped = len(open_f) - len(keep)
+    if dropped > 0:
+        state["retired"] = (state.get("retired") or 0) + dropped
+        state["open"] = keep
+        print(f"state: retired {dropped} settled findings (kept {len(keep)})")
+    bm = state.get("by_message") or {}
+    if len(bm) > KEEP_MSGS:
+        state["by_message"] = dict(list(bm.items())[-KEEP_MSGS:])
+    return state
+
+
 def pull():
     """Fetch state from the private repo into alerts/state.json."""
     if not _pat():
         print("state: no token, using local file"); return True
     try:
         d = _req("GET")
-        raw = base64.b64decode(d["content"])
+        if d.get("content"):
+            raw = base64.b64decode(d["content"])
+        else:                                    # >1 MB: the API omits inline content
+            url = d.get("download_url")
+            raw = urllib.request.urlopen(urllib.request.Request(
+                url, headers={"Authorization": f"Bearer {_pat()}"}), timeout=30).read()
         STATE.parent.mkdir(parents=True, exist_ok=True)
         STATE.write_bytes(raw)
         (STATE.parent / ".state_sha").write_text(d["sha"])
@@ -58,6 +93,8 @@ def push():
     """Store the updated state back in the private repo."""
     if not _pat() or not STATE.exists():
         print("state: nothing to push"); return True
+    st = prune(json.loads(STATE.read_text()))
+    STATE.write_text(json.dumps(st, indent=1))
     body = {"message": f"state {os.environ.get('GITHUB_RUN_ID','local')}",
             "content": base64.b64encode(STATE.read_bytes()).decode()}
     sha_f = STATE.parent / ".state_sha"

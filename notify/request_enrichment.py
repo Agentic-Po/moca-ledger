@@ -29,6 +29,15 @@ def main():
         except Exception as e:
             print("enrichment: dispatch failed:", str(e)[:60])
     STATE.write_text(json.dumps(s, indent=1))
+    if sent:
+        # persist immediately: this step runs after the state was saved, so without
+        # this the flag is lost and every run re-dispatches the same findings
+        try:
+            sys.path.insert(0, str(ROOT))
+            from notify.state_sync import push as push_state
+            push_state()
+        except Exception as e:
+            print(f"enrichment: could not persist flags ({type(e).__name__}) — may re-dispatch")
     print(f"enrichment: requested {sent}")
     return 0
 
