@@ -112,8 +112,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "2871e95837": {
    "signal": "10",
@@ -145,8 +144,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "bcfabe0135": {
    "signal": "10",
@@ -180,8 +178,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "bb24d3ef2a": {
    "signal": "10",
@@ -215,8 +212,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "8529a1b71b": {
    "signal": "11",
@@ -249,8 +245,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "cbce8ab42b": {
    "signal": "11",
@@ -283,8 +278,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "80f203e610": {
    "signal": "11",
@@ -303,7 +297,7 @@
    "owner": "UNASSIGNED",
    "as_of_block": 50303959,
    "evidence": null,
-   "view_png": "incidents/2026-08-21/0620-11-9fca61e9/view.png",
+   "view_png": null,
    "detail": "10 in 60s",
    "escalation": "",
    "id": "80f203e610",
@@ -315,10 +309,7 @@
    "unit_source": "trailing7d",
    "type_verified": false,
    "pending_send": false,
-   "backfill": false,
-   "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "backfill": true
   },
   "4a681751c1": {
    "signal": "11",
@@ -351,8 +342,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "4c8de53e7f": {
    "signal": "15",
@@ -385,8 +375,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "872a99313e": {
    "signal": "4a",
@@ -1022,7 +1011,7 @@
    "owner": "UNASSIGNED",
    "as_of_block": 50303959,
    "evidence": null,
-   "view_png": "incidents/2026-08-22/0610-s-a-db959c6a/view.png",
+   "view_png": "incidents/2026-08-22/1110-s-a-db959c6a/view.png",
    "detail": "148/24h thr=15",
    "escalation": "",
    "id": "e48ef9e830",
@@ -1036,8 +1025,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "15cda2e016": {
    "signal": "S-A",
@@ -1070,8 +1058,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "3a9cdb6a11": {
    "signal": "S-A",
@@ -1090,7 +1077,7 @@
    "owner": "UNASSIGNED",
    "as_of_block": 50303959,
    "evidence": null,
-   "view_png": "incidents/2026-08-22/0610-s-a-0d462daf/view.png",
+   "view_png": "incidents/2026-08-22/1110-s-a-0d462daf/view.png",
    "detail": "2171/24h thr=15",
    "escalation": "",
    "id": "3a9cdb6a11",
@@ -1104,8 +1091,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "78e68f3743": {
    "signal": "S-A",
@@ -1138,8 +1124,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "22e6db9f8f": {
    "signal": "S-A",
@@ -1158,7 +1143,7 @@
    "owner": "UNASSIGNED",
    "as_of_block": 50303959,
    "evidence": null,
-   "view_png": "incidents/2026-08-22/0610-s-a-d7c9b403/view.png",
+   "view_png": "incidents/2026-08-22/1110-s-a-d7c9b403/view.png",
    "detail": "1926/24h thr=15",
    "escalation": "",
    "id": "22e6db9f8f",
@@ -1172,8 +1157,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "2009e070a0": {
    "signal": "S-G",
@@ -1237,8 +1221,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "bddd349d5b": {
    "signal": "S-G",
@@ -1268,8 +1251,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "abe7c2c6ca": {
    "signal": "S-G",
@@ -1302,8 +1284,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "8ff9d11bfe": {
    "signal": "S-G",
@@ -1353,7 +1334,7 @@
    "owner": "UNASSIGNED",
    "as_of_block": 50303959,
    "evidence": null,
-   "view_png": "incidents/2026-08-21/0930-s-g-419a2618/view.png",
+   "view_png": null,
    "detail": "out 1,332 (first touch / 24 h; 1,332 MOCA)",
    "escalation": "",
    "id": "81722e0f03",
@@ -1365,10 +1346,7 @@
    "unit_source": "trailing7d",
    "type_verified": false,
    "pending_send": false,
-   "backfill": false,
-   "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "backfill": true
   },
   "bd6480507e": {
    "signal": "S-G",
@@ -1387,7 +1365,7 @@
    "owner": "UNASSIGNED",
    "as_of_block": 50303959,
    "evidence": null,
-   "view_png": "incidents/2026-08-21/1030-s-g-e10601a7/view.png",
+   "view_png": null,
    "detail": "out 1,332 (1,332 MOCA)",
    "escalation": "",
    "id": "bd6480507e",
@@ -1399,10 +1377,7 @@
    "unit_source": "trailing7d",
    "type_verified": false,
    "pending_send": false,
-   "backfill": false,
-   "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "backfill": true
   },
   "41ca67524a": {
    "signal": "S-G",
@@ -1435,8 +1410,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "ef80ed2466": {
    "signal": "S-G",
@@ -1469,8 +1443,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "00d1f01746": {
    "signal": "S-G",
@@ -1717,8 +1690,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "4f342e732d": {
    "signal": "S-G",
@@ -1751,8 +1723,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "cc97886eb6": {
    "signal": "S-G",
@@ -1785,8 +1756,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "24ad36f033": {
    "signal": "S-G",
@@ -1816,8 +1786,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "ba3af110e1": {
    "signal": "S-G",
@@ -1850,8 +1819,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "597c079073": {
    "signal": "S-G",
@@ -1881,8 +1849,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "05a98f1bd1": {
    "signal": "S-G",
@@ -1912,8 +1879,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "11de59d99e": {
    "signal": "S-G",
@@ -1943,8 +1909,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "16dec8711b": {
    "signal": "S-G",
@@ -1960,7 +1925,7 @@
    "owner": "UNASSIGNED",
    "as_of_block": 50303959,
    "evidence": null,
-   "view_png": "incidents/2026-08-21/1750-s-g-0067e8bb/view.png",
+   "view_png": "incidents/2026-08-22/1020-s-g-0067e8bb/view.png",
    "detail": "out 177",
    "escalation": "",
    "id": "16dec8711b",
@@ -1974,8 +1939,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "fd1049f82d": {
    "signal": "S-G",
@@ -1991,7 +1955,7 @@
    "owner": "UNASSIGNED",
    "as_of_block": 50303959,
    "evidence": null,
-   "view_png": "incidents/2026-08-22/0540-s-g-ee39bc7a/view.png",
+   "view_png": "incidents/2026-08-22/0650-s-g-ee39bc7a/view.png",
    "detail": "out 174",
    "escalation": "",
    "id": "fd1049f82d",
@@ -2005,8 +1969,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "0f73315885": {
    "signal": "S-G",
@@ -2022,7 +1985,7 @@
    "owner": "UNASSIGNED",
    "as_of_block": 50303959,
    "evidence": null,
-   "view_png": "incidents/2026-08-22/0510-s-g-709bbbb4/view.png",
+   "view_png": "incidents/2026-08-22/1020-s-g-709bbbb4/view.png",
    "detail": "out 177",
    "escalation": "",
    "id": "0f73315885",
@@ -2036,8 +1999,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "4f57013e16": {
    "signal": "S-Q",
@@ -2056,7 +2018,7 @@
    "owner": "UNASSIGNED",
    "as_of_block": 50303959,
    "evidence": null,
-   "view_png": "incidents/2026-08-21/0810-s-q-platform/view.png",
+   "view_png": null,
    "detail": "104/24h fresh 98%",
    "escalation": "",
    "id": "4f57013e16",
@@ -2068,10 +2030,7 @@
    "unit_source": "trailing7d",
    "type_verified": false,
    "pending_send": false,
-   "backfill": false,
-   "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "backfill": true
   },
   "1e6b65b301": {
    "signal": "S-Q2",
@@ -2089,7 +2048,7 @@
    "owner": "UNASSIGNED",
    "as_of_block": 50303959,
    "evidence": null,
-   "view_png": "incidents/2026-08-21/1050-s-q2-platform/view.png",
+   "view_png": null,
    "detail": "30/24h",
    "escalation": "",
    "id": "1e6b65b301",
@@ -2101,10 +2060,7 @@
    "unit_source": "trailing7d",
    "type_verified": false,
    "pending_send": false,
-   "backfill": false,
-   "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "backfill": true
   },
   "19218c7ec2": {
    "signal": "9",
@@ -2178,7 +2134,7 @@
    "owner": "UNASSIGNED",
    "as_of_block": 50303959,
    "evidence": null,
-   "view_png": "incidents/2026-08-22/0610-ev-platform/view.png",
+   "view_png": "incidents/2026-08-22/1110-ev-platform/view.png",
    "detail": "4273/24h >= 3x205",
    "escalation": "",
    "id": "2829dda1a4",
@@ -2192,8 +2148,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "453cd8d05f": {
    "signal": "S-F",
@@ -2226,8 +2181,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "052862b954": {
    "signal": "13",
@@ -12057,8 +12011,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "9717622d9e": {
    "signal": "13",
@@ -12116,8 +12069,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "48514b969f": {
    "signal": "13",
@@ -12147,8 +12099,7 @@
    "pending_send": false,
    "backfill": false,
    "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "ack_ts": "2026-08-22T11:21:16.289822+00:00"
   },
   "9195b82509": {
    "signal": "composite",
@@ -12229,7 +12180,7 @@
    "owner": "UNASSIGNED",
    "as_of_block": 50303959,
    "evidence": null,
-   "view_png": "incidents/2026-08-21/0620-composite-75da4102/view.png",
+   "view_png": null,
    "detail": "11, S-A",
    "escalation": "",
    "id": "7790c484b6",
@@ -12241,10 +12192,7 @@
    "unit_source": "trailing7d",
    "type_verified": false,
    "pending_send": false,
-   "backfill": false,
-   "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "backfill": true
   },
   "da2fa810d9": {
    "signal": "composite",
@@ -12263,7 +12211,7 @@
    "owner": "UNASSIGNED",
    "as_of_block": 50303959,
    "evidence": null,
-   "view_png": "incidents/2026-08-21/0730-composite-85762dd4/view.png",
+   "view_png": null,
    "detail": "11, S-A",
    "escalation": "",
    "id": "da2fa810d9",
@@ -12275,17 +12223,14 @@
    "unit_source": "trailing7d",
    "type_verified": false,
    "pending_send": false,
-   "backfill": false,
-   "ack_by": "go-live-seed",
-   "ack_ts": "2026-08-22T11:15:05.472902+00:00",
-   "ack_note": "known 19-21 Aug incident + post-pause residue; seeded at detector go-live"
+   "backfill": true
   }
  },
  "sent": {},
  "telegram_offset": 0,
  "version": 1,
  "acknowledged_seed": {
-  "at": "2026-08-22T11:15:05.472902+00:00",
-  "count": 41
+  "at": "2026-08-22T11:21:16.289822+00:00",
+  "count": 34
  }
 }

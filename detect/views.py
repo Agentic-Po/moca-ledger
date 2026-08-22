@@ -40,26 +40,44 @@ def render(finding, ctx, path):
 
 
 def _concentration(f, ctx):
+    """Two variants must render differently:
+       - share variant  (window '6h')     : share of equip-sized payouts per creator
+       - count variant  (window '60min')  : payout COUNT per creator in the hour
+       Rendering a count finding on a share axis makes the flagged bar look
+       below threshold — never do that."""
     end = f.ts + SLOT
+    count_variant = str(getattr(f, "window", "")).startswith("60")
+    span = 1 * H if count_variant else 6 * H
     counts = collections.Counter()
     for ts, t, v, bd, tx in ctx.equips:
-        if end - 6 * H <= ts < end and not ctx.is_internal(t):
+        if end - span <= ts < end and not ctx.is_internal(t):
             counts[t] += 1
     total = sum(counts.values()) or 1
     top = counts.most_common(8)
     fig, ax = plt.subplots(**FIG)
-    shares = [k / total for _, k in top]
     labels = [w[:12] for w, _ in top]
-    ax.bar(range(len(top)), shares, color=["#c0392b" if w == f.key else "#5b7fa6" for w, _ in top])
-    org = ctx.baselines.get("daily_creator_rewards_organic", {}).get("top1_share_moca", {})
-    if org:
-        ax.axhspan(org.get("p50", 0), org.get("p95", 0), color="#9acd9a", alpha=0.3, label="organic p50-p95")
-    ax.axhline(f.threshold if isinstance(f.threshold, float) else 0.45, color="#c0392b", ls="--", lw=1, label="page threshold")
+    colors = ["#c0392b" if w == f.key else "#5b7fa6" for w, _ in top]
+    if count_variant:
+        ys = [k for _, k in top]
+        ax.bar(range(len(top)), ys, color=colors)
+        try: ax.axhline(float(f.threshold), color="#c0392b", ls="--", lw=1, label=f"page threshold ({f.threshold}/60 min)")
+        except (TypeError, ValueError): pass
+        ax.set_ylabel("equip-sized payouts / 60 min")
+        title = f"payout rate per recipient · hour ending {utc(end)} UTC · n={total}"
+    else:
+        ys = [k / total for _, k in top]
+        ax.bar(range(len(top)), ys, color=colors)
+        org = ctx.baselines.get("daily_creator_rewards_organic", {}).get("top1_share_moca", {})
+        if org:
+            ax.axhspan(org.get("p50", 0), org.get("p95", 0), color="#9acd9a", alpha=0.3, label="organic p50-p95")
+        thr = f.threshold if isinstance(f.threshold, (int, float)) and 0 < float(f.threshold) <= 1 else 0.45
+        ax.axhline(float(thr), color="#c0392b", ls="--", lw=1, label=f"page threshold ({thr:.2f})")
+        ax.set_ylabel("share of equip-sized payouts / 6 h")
+        title = f"concentration · window ending {utc(end)} UTC · n={total}"
     ax.set_xticks(range(len(top)))
     ax.set_xticklabels(labels, rotation=30, ha="right")
-    ax.set_ylabel("share of equip-sized payouts / 6 h")
     ax.legend(fontsize=8)
-    _style(ax, f"concentration · window ending {utc(end)} UTC · n={total}")
+    _style(ax, title)
     return fig
 
 

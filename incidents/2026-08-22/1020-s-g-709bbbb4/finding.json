@@ -1,20 +1,20 @@
 {
  "signal": "S-G",
- "key": "0x018509501bf2cd730c84e315137eec0331a1b756",
+ "key": "0x709bbbb49041953f3fc99ea7b0732d3decf197d8",
  "tier": "digest",
- "value": 175.0,
+ "value": 177.0,
  "threshold": null,
  "organic_p95": null,
  "window": "24h",
- "ts": 1787376600,
+ "ts": 1787394000,
  "headline": [],
  "recommended_action": "no action; context only",
  "owner": "UNASSIGNED",
  "as_of_block": 50303959,
  "evidence": null,
- "view_png": "incidents/2026-08-22/0530-s-g-01850950/view.png",
- "detail": "out 175",
+ "view_png": "incidents/2026-08-22/1020-s-g-709bbbb4/view.png",
+ "detail": "out 177",
  "escalation": "",
- "id": "11de59d99e",
- "first_ts": "2026-08-22 05:30"
+ "id": "0f73315885",
+ "first_ts": "2026-08-22 10:20"
 }

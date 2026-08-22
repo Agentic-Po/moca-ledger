@@ -2,21 +2,21 @@
  "signal": "EV",
  "key": "platform",
  "tier": "page",
- "value": 10020,
+ "value": 4273,
  "threshold": 615,
  "organic_p95": 205,
  "window": "24h",
- "ts": 1787379000,
+ "ts": 1787397000,
  "headline": [
-  "10020 equip-sized payouts / 24 h (3x organic p95 205)"
+  "4273 equip-sized payouts / 24 h (3x organic p95 205)"
  ],
  "recommended_action": "request reward pause for this recipient and start a review",
  "owner": "UNASSIGNED",
- "as_of_block": 50294885,
+ "as_of_block": 50303959,
  "evidence": null,
- "view_png": "incidents/2026-08-22/0610-ev-platform/view.png",
- "detail": "10020/24h >= 3x205",
+ "view_png": "incidents/2026-08-22/1110-ev-platform/view.png",
+ "detail": "4273/24h >= 3x205",
  "escalation": "",
  "id": "2829dda1a4",
- "first_ts": "2026-08-22 06:10"
+ "first_ts": "2026-08-22 11:10"
 }

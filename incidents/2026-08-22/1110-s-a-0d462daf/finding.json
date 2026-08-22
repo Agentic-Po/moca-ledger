@@ -2,22 +2,22 @@
  "signal": "S-A",
  "key": "0x0d462daf8eebf53476cd95aeac87fb3141f9b13b",
  "tier": "notify",
- "value": 3917,
+ "value": 2171,
  "threshold": 15,
  "organic_p95": 2,
  "window": "24h",
- "ts": 1787379000,
+ "ts": 1787397000,
  "headline": [
-  "3917 equip-sized payouts / rolling 24 h (threshold 15)",
+  "2171 equip-sized payouts / rolling 24 h (threshold 15)",
   "creator age >=7d"
  ],
  "recommended_action": "review this entity; add to watch if the pattern repeats",
  "owner": "UNASSIGNED",
- "as_of_block": 50294885,
+ "as_of_block": 50303959,
  "evidence": null,
- "view_png": "incidents/2026-08-22/0610-s-a-0d462daf/view.png",
- "detail": "3917/24h thr=15",
+ "view_png": "incidents/2026-08-22/1110-s-a-0d462daf/view.png",
+ "detail": "2171/24h thr=15",
  "escalation": "",
  "id": "3a9cdb6a11",
- "first_ts": "2026-08-22 06:10"
+ "first_ts": "2026-08-22 11:10"
 }
