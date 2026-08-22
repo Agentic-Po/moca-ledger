@@ -43,7 +43,7 @@ jobs:
       - name: Commit state
         run: |
           git config user.name  "moca-ledger-bot"
-          git config user.email "actions@users.noreply.github.com"
+          git config user.email "actions@users.noreply.github.com"  # pii-ok: github bot identity
           git add -A data state.json heartbeat.json alerts incidents detect/mindset.json 2>/dev/null || true
           git diff --cached --quiet || git commit -q -m "crawl $(date -u +'%Y-%m-%d %H:%M') UTC"
           git pull --rebase -q origin main || true
