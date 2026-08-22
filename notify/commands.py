@@ -31,6 +31,13 @@ def reply(text, to=None):
     if to: p["reply_to_message_id"] = to
     return api("sendMessage", **p)
 
+def _owner_name():
+    try:
+        return json.loads((ROOT / "detect" / "thresholds.json").read_text()).get("escalation_owner", "the on-call")
+    except Exception:
+        return "the on-call"
+
+
 def load(): return json.loads(STATE.read_text()) if STATE.exists() else {"open": {}, "telegram_offset": 0}
 def save(s): STATE.write_text(json.dumps(s, indent=1))
 
@@ -125,111 +132,147 @@ def main():
     s = load(); off = int(s.get("telegram_offset") or 0)
     r = api("getUpdates", offset=off + 1 if off else 0, timeout=0, allowed_updates=json.dumps(["message"]))
     ups = r.get("result") or []
-    if not ups: print("commands: no updates"); return 0
+    if not ups:
+        print("commands: no updates"); return 0
     changed = 0
     for u in ups:
+        # The offset advances even if this update fails, and state is saved either way.
+        # Otherwise one malformed message replays the same crash every run and the
+        # whole command surface dies silently.
         s["telegram_offset"] = max(int(s.get("telegram_offset") or 0), int(u.get("update_id", 0)))
-        m = u.get("message") or {}
-        text = (m.get("text") or "").strip()
-        if not text.startswith("/"):
-            rk, rf = find_by_reply(s, m)
-            if not rf: continue
-            low = text.lower()
-            # Whole words only, checked in a fixed order. A substring scan is dangerous
-            # here: "attack" contains "ack", so "this looks like an attack" would have
-            # silenced the very case it was reporting.
-            WORDS = [("contained", "contained"), ("fixed", "contained"),
-                     ("reported", "reported"), ("escalated", "reported"),
-                     ("closed", "closed"), ("resolved", "closed"),
-                     ("watching", "watching"), ("noted", "watching")]
-            word = st = None
-            for w, mapped in WORDS:
-                if re.search(rf"\b{w}\b", low):
-                    word, st = w, mapped
-                    break
-            if word and re.search(rf"\bnot\s+{word}\b", low):   # "reported, not contained"
-                word = st = None
-            if not ((not ACK()) or uid in ACK()):
-                reply("not authorised", m.get("message_id")); continue
-            set_status(s, rf.get("id"), st, uid, text[:300])
-            icon, meaning = STATUSES.get(st, ("👀", ""))
-            extra = {"reported": "I will stay quiet unless it keeps growing.",
-                     "contained": "Any further activity will page you — that would mean the fix did not hold.",
-                     "closed": "Removed from open cases; still in the record.",
-                     "watching": "No repeats; I will tell you if it changes materially."}.get(st, "")
-            reply(f"{icon} recorded as <b>{st}</b> for this case ({meaning})\n{extra}", m.get("message_id"))
-            changed += 1
-            continue
-        uid = str((m.get("from") or {}).get("id", "")); mid = m.get("message_id")
-        cmd, *args = text.split()
-        cmd = cmd.split("@")[0].lower()
-        allowed = (not ACK()) or uid in ACK()
-        rk, rf = find_by_reply(s, m)
-        if rf and (not args or not find(s, args[0])[1]):
-            args = [rf.get("id")] + list(args)          # replying supplies the case id
-        if cmd == "/status":
-            reply(status_text(s), mid)
-        elif cmd == "/help":
-            reply("<b>Reading the situation</b>\n"
-                  "/status — is anything waiting on me right now\n"
-                  "/cases — everything open, with how long it has been open\n\n"
-                  "<b>Telling me where a case stands</b>\n"
-                  "/reported &lt;id&gt; [note] — team informed, action pending. I stop repeating it, "
-                  "but I will tell you if it keeps growing.\n"
-                  "/contained &lt;id&gt; [note] — a fix was applied. Any further activity after this "
-                  "point pages you loudly, because it means the fix did not hold.\n"
-                  "/watching &lt;id&gt; — seen, no action yet, keep an eye on it\n"
-                  "/close &lt;id&gt; [note] — resolved\n"
-                  "/reopen &lt;id&gt;\n\n"
-                  "<b>Quieting noise</b>\n"
-                  "/ack &lt;id&gt; [note] · /snooze &lt;id&gt; &lt;hours&gt; · /mute &lt;signal&gt; &lt;hours&gt; · /unmute &lt;signal&gt;", mid)
-        elif cmd == "/cases":
-            reply(cases_text(s), mid)
-        elif cmd in ("/reported", "/contained", "/close", "/watching", "/reopen") and args:
-            if not allowed: reply("not authorised", mid); continue
-            st = {"/reported": "reported", "/contained": "contained", "/close": "closed",
-                  "/watching": "watching", "/reopen": None}[cmd]
-            if cmd == "/reopen":
-                k, f = find(s, args[0])
-                if not f: reply(f"no case matching <code>{args[0]}</code>", mid); continue
-                for fld in ("status", "status_ts", "status_note", "ack_by", "ack_ts", "value_at_status"):
-                    f.pop(fld, None)
-                reply(f"↩️ reopened <code>{f.get('id')}</code> — it will alert again if it fires", mid)
-            else:
-                k, f = set_status(s, args[0], st, uid, " ".join(args[1:]))
-                if not f: reply(f"no case matching <code>{args[0]}</code>", mid); continue
-                icon, meaning = STATUSES[st]
-                extra = {"reported": "I will stay quiet unless it keeps growing.",
-                         "contained": "Any further activity from now on will page you — that would mean the fix did not hold.",
-                         "closed": "Removed from open cases; still in the record.",
-                         "watching": "No repeats; I will tell you if it changes materially."}[st]
-                reply(f"{icon} <b>{st}</b> — <code>{f.get('id')}</code> ({meaning})\n{extra}", mid)
-            changed += 1
-        elif cmd in ("/ack", "/snooze") and args:
-            if not allowed: reply("not authorised", mid); continue
-            k, f = find(s, args[0])
-            if not f: reply(f"no open finding matching <code>{args[0]}</code>", mid); continue
-            now = dt.datetime.now(dt.UTC)
-            if cmd == "/ack":
-                f["ack_by"] = uid; f["ack_ts"] = now.isoformat()
-                if len(args) > 1: f["ack_note"] = " ".join(args[1:])[:200]
-                reply(f"✅ acked <code>{f.get('id')}</code> · {f.get('signal')} <code>{str(f.get('key'))[:12]}</code>", mid)
-            else:
-                h = float(args[1]) if len(args) > 1 and args[1].replace(".", "").isdigit() else 6
-                f["snooze_until"] = (now + dt.timedelta(hours=h)).isoformat()
-                reply(f"😴 snoozed <code>{f.get('id')}</code> for {h:g} h", mid)
-            changed += 1
-        elif cmd in ("/mute", "/unmute") and args:
-            if not allowed: reply("not authorised", mid); continue
-            sig = args[0]; mutes = s.setdefault("muted", {})
-            if cmd == "/mute":
-                h = float(args[1]) if len(args) > 1 and args[1].replace(".", "").isdigit() else 6
-                mutes[sig] = (dt.datetime.now(dt.UTC) + dt.timedelta(hours=h)).isoformat()
-                reply(f"🔇 muted <b>{sig}</b> for {h:g} h", mid)
-            else:
-                mutes.pop(sig, None); reply(f"🔊 unmuted <b>{sig}</b>", mid)
-            changed += 1
-    save(s); print(f"commands: {len(ups)} update(s), {changed} state change(s)")
+        try:
+            changed += handle(s, u.get("message") or {})
+        except Exception as e:
+            print(f"commands: update skipped ({type(e).__name__})")
+            try:
+                reply("\u26a0\ufe0f I could not process that message \u2014 <b>your case state was NOT changed</b>. "
+                      "Send <code>/cases</code> to see where things stand.", (u.get("message") or {}).get("message_id"))
+            except Exception:
+                pass
+    save(s)
+    print(f"commands: {len(ups)} update(s), {changed} state change(s)")
     return 0
+
+
+def handle(s, m):
+    """One message. Returns 1 if it changed case state."""
+    text = (m.get("text") or "").strip()
+    uid  = str((m.get("from") or {}).get("id", ""))
+    mid  = m.get("message_id")
+    # fail CLOSED: with no authorised list configured nobody may change state
+    allowed = bool(ACK()) and uid in ACK()
+    deny = lambda: reply(f"Only the on-call can change a case. Ask {_owner_name()} to be added.", mid)
+    rk, rf = find_by_reply(s, m)
+
+    if not text.startswith("/"):
+        if not rf:
+            return 0
+        low = text.lower()
+        # Whole words, in a fixed order. A substring scan is dangerous here:
+        # "attack" contains "ack", so "this looks like an attack" would have
+        # silenced the very case it was reporting.
+        WORDS = [("contained", "contained"), ("fixed", "contained"),
+                 ("reported", "reported"), ("escalated", "reported"),
+                 ("closed", "closed"), ("resolved", "closed"),
+                 ("watching", "watching"), ("noted", "watching")]
+        st = None
+        for w, mapped in WORDS:
+            if re.search(rf"\b{w}\b", low):
+                if re.search(rf"\bnot\s+{w}\b", low):
+                    st = None
+                    break
+                st = mapped
+                break
+        if not st:
+            reply("Got it \u2014 to record it against this case, reply with one of: "
+                  "<b>reported</b> \u00b7 <b>contained</b> \u00b7 <b>watching</b> \u00b7 <b>closed</b>", mid)
+            return 0
+        if not allowed:
+            deny(); return 0
+        set_status(s, rf.get("id"), st, uid, text[:300])
+        icon, meaning = STATUSES.get(st, ("\U0001f440", ""))
+        extra = {"reported": "I will stay quiet unless it keeps growing.",
+                 "contained": "Any further activity will page you \u2014 that would mean the fix did not hold.",
+                 "closed": "Removed from open cases; still in the record.",
+                 "watching": "No repeats; I will tell you if it changes materially."}.get(st, "")
+        when = m.get("date")
+        seen = ""
+        if when:
+            gap = (dt.datetime.now(dt.UTC) - dt.datetime.fromtimestamp(int(when), dt.UTC)).total_seconds() / 60
+            if gap > 3: seen = f"\n<i>You sent this {gap:.0f} min ago; I read replies about every 10 minutes.</i>"
+        reply(f"{icon} recorded as <b>{st}</b> for this case ({meaning})\n{extra}{seen}", mid)
+        return 1
+
+    cmd, *args = text.split()
+    cmd = cmd.split("@")[0].lower()
+    if rf and (not args or not find(s, args[0])[1]):
+        args = [rf.get("id")] + list(args)          # replying supplies the case id
+
+    if cmd == "/status":
+        reply(status_text(s), mid)
+    elif cmd == "/cases":
+        reply(cases_text(s), mid)
+    elif cmd == "/help":
+        reply("<b>Reading the situation</b>\n"
+              "/status \u2014 is anything waiting on me right now\n"
+              "/cases \u2014 everything open, and how long it has been open\n\n"
+              "<b>Telling me where a case stands</b> (or just reply to the alert with the word)\n"
+              "/reported &lt;id&gt; [note] \u2014 team informed. I go quiet unless it keeps growing.\n"
+              "/contained &lt;id&gt; [what was done] \u2014 a fix is in. Any further activity pages you.\n"
+              "/watching &lt;id&gt; \u00b7 /close &lt;id&gt; \u00b7 /reopen &lt;id&gt;\n\n"
+              "<b>Quieting noise</b>\n"
+              "/ack &lt;id&gt; [note] \u00b7 /snooze &lt;id&gt; &lt;hours&gt; \u00b7 /mute &lt;signal&gt; &lt;hours&gt; \u00b7 /unmute &lt;signal&gt;", mid)
+    elif cmd in ("/reported", "/contained", "/close", "/watching", "/reopen") and args:
+        if not allowed:
+            deny(); return 0
+        st = {"/reported": "reported", "/contained": "contained", "/close": "closed",
+              "/watching": "watching", "/reopen": None}[cmd]
+        if cmd == "/reopen":
+            k, f = find(s, args[0])
+            if not f:
+                reply(f"no case matching <code>{args[0]}</code>", mid); return 0
+            for fld in ("status", "status_ts", "status_note", "ack_by", "ack_ts", "value_at_status"):
+                f.pop(fld, None)
+            reply(f"\u21a9\ufe0f reopened <code>{f.get('id')}</code> \u2014 it will alert again if it fires", mid)
+        else:
+            k, f = set_status(s, args[0], st, uid, " ".join(args[1:]))
+            if not f:
+                reply(f"no case matching <code>{args[0]}</code>", mid); return 0
+            icon, meaning = STATUSES[st]
+            extra = {"reported": "I will stay quiet unless it keeps growing.",
+                     "contained": "Any further activity from now on pages you \u2014 that would mean the fix did not hold.",
+                     "closed": "Removed from open cases; still in the record.",
+                     "watching": "No repeats; I will tell you if it changes materially."}[st]
+            reply(f"{icon} <b>{st}</b> \u2014 <code>{f.get('id')}</code> ({meaning})\n{extra}", mid)
+        return 1
+    elif cmd in ("/ack", "/snooze") and args:
+        if not allowed:
+            deny(); return 0
+        k, f = find(s, args[0])
+        if not f:
+            reply(f"no open finding matching <code>{args[0]}</code>", mid); return 0
+        now = dt.datetime.now(dt.UTC)
+        if cmd == "/ack":
+            f["ack_by"] = uid; f["ack_ts"] = now.isoformat()
+            if len(args) > 1: f["ack_note"] = " ".join(args[1:])[:200]
+            reply(f"\u2705 acked <code>{f.get('id')}</code> \u00b7 {f.get('signal')}", mid)
+        else:
+            h = float(args[1]) if len(args) > 1 and args[1].replace(".", "").isdigit() else 6
+            f["snooze_until"] = (now + dt.timedelta(hours=h)).isoformat()
+            reply(f"\U0001f634 snoozed <code>{f.get('id')}</code> for {h:g} h", mid)
+        return 1
+    elif cmd in ("/mute", "/unmute") and args:
+        if not allowed:
+            deny(); return 0
+        sig = args[0]; mutes = s.setdefault("muted", {})
+        if cmd == "/mute":
+            h = float(args[1]) if len(args) > 1 and args[1].replace(".", "").isdigit() else 6
+            mutes[sig] = (dt.datetime.now(dt.UTC) + dt.timedelta(hours=h)).isoformat()
+            reply(f"\U0001f507 muted <b>{sig}</b> for {h:g} h", mid)
+        else:
+            mutes.pop(sig, None); reply(f"\U0001f50a unmuted <b>{sig}</b>", mid)
+        return 1
+    return 0
+
 
 if __name__ == "__main__": sys.exit(main())

@@ -10,3 +10,4 @@ alerts/state.json
 incidents/
 detect/balances.json
 labels/exit_watch.json
+alerts/.state_sha
