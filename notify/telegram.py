@@ -132,10 +132,11 @@ def send_pending():
     if digest:
         for f in digest: f["pending_send"] = False; f["last_sent"] = dt.datetime.now(dt.UTC).isoformat()
         save_state(s)
-        shown = digest[:25]
-        body = "📋 <b>Digest</b>\n" + "\n".join(f"• {d.get('signal')} <code>{d.get('key','')}</code> {d.get('value','')}" for d in shown)
-        if len(digest) > len(shown):
-            body += f"\n… and <b>{len(digest) - len(shown)}</b> more (see the repo index)"
+        try:
+            from explain import digest as fmt_digest
+        except ImportError:
+            from notify.explain import digest as fmt_digest
+        body = fmt_digest(digest)
         send(body, silent=True); save_state(s)
     return 0
 

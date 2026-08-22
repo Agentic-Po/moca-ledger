@@ -169,3 +169,35 @@ def humanise(f):
     footer = (f"<i>signal {f.get('signal')} · {f.get('value')} vs {f.get('threshold')} · "
               f"block {f.get('as_of_block','?')}</i>\n<code>/ack {f.get('id','')}</code>")
     return "\n".join(lines) + "\n\n" + footer
+
+
+# Short, self-explaining lines for the silent digest. Each says what the number IS.
+DIGEST_LINE = {
+    "13":  ("Withdrawals to outside wallets", "{n} Minds sent MOCA off-platform (allowed; recorded for the trail)"),
+    "S-G": ("Watch-list wallets moved", "{n} wallets from the August incident moved MOCA"),
+    "10i": ("One creator took a large share (our own creators included)", "{n} window(s) where a single creator took most of the equip rewards"),
+    "9":   ("Many first-time payout recipients", "{n} hour(s) with an unusual number of brand-new wallets paid"),
+    "7":   ("Skills equipped but not used", "{n} creator(s) earning equips with almost no invokes"),
+    "14":  ("Treasury outflow above its usual level", "{n} window(s) above the normal range"),
+    "S-X": ("Balances moved in incident-linked wallets", "{n} wallet(s) changed balance"),
+}
+
+
+def digest(findings):
+    """One silent, readable summary instead of a list of codes."""
+    import collections
+    groups = collections.OrderedDict()
+    for f in findings:
+        groups.setdefault(str(f.get("signal", "")).lstrip("#"), []).append(f)
+    lines = ["📋 <b>For the record</b>",
+             "<i>Nothing here needs action — this is the background activity log.</i>", ""]
+    for sig, items in groups.items():
+        title, tmpl = DIGEST_LINE.get(sig, (SIGNALS.get(sig, FALLBACK)["title"], "{n} event(s)"))
+        lines.append(f"<b>{title}</b>")
+        lines.append(f"   {tmpl.format(n=len(items))}")
+        biggest = max(items, key=lambda x: len(str(x.get("detail") or "")))
+        if biggest.get("detail"):
+            lines.append(f"   e.g. {biggest['detail']}")
+        lines.append("")
+    lines.append("<i>Ask any alert for detail with /status</i>")
+    return "\n".join(lines)
