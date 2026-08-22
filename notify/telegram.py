@@ -56,7 +56,24 @@ def send(text, photo=None, silent=False):
 ICON = {"page": "🚨", "notify": "🟠", "digest": "📋", "health": "⏳"}
 
 def render(f):
-    """finding dict -> HTML message"""
+    """finding dict -> HTML message, written for whoever is awake (see notify/explain.py)"""
+    try:
+        from explain import humanise
+    except ImportError:
+        try:
+            from notify.explain import humanise
+        except ImportError:
+            humanise = None
+    if humanise:
+        try:
+            return humanise(f)
+        except Exception:
+            pass
+    return _render_terse(f)
+
+
+def _render_terse(f):
+    """Fallback: the original compact form."""
     i = ICON.get(f.get("tier", "notify"), "🟠")
     head = f"{i} <b>{f.get('tier','notify').upper()} · {f.get('signal')}</b>"
     key  = f.get("key", "")
