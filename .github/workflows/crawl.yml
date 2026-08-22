@@ -65,17 +65,17 @@ jobs:
           python3 notify/telegram.py --send-pending
 
 
+      - name: Save detector memory (private repo)
+        if: always()
+        env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
+        run: python3 notify/state_sync.py push || true
+
       - name: Request tier-2 enrichment (private side)
         if: success()
         continue-on-error: true
         env:
           PRIVATE_REPO_PAT: ${{ secrets.PRIVATE_REPO_PAT }}
         run: python3 notify/request_enrichment.py
-
-      - name: Save detector memory (private repo)
-        if: always()
-        env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
-        run: python3 notify/state_sync.py push || true
 
       - name: Commit state
         run: |
