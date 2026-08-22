@@ -11,3 +11,8 @@ incidents/
 detect/balances.json
 labels/exit_watch.json
 alerts/.state_sha
+
+# the message ledger holds human reply text and Telegram user ids — it belongs in
+# the PRIVATE repo only. `git add -A` runs every ten minutes in crawl.yml; without
+# this line the first run after msglog is wired publishes identity data.
+alerts/msglog/

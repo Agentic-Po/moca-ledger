@@ -46,19 +46,29 @@ PUBLIC_ADDR = _public_addresses()
 ADDR_RX = re.compile(r"0x[0-9a-f]{40}", re.I)
 
 def files():
-    """Only TRACKED files matter: untracked working files (live findings, balances)
-    are deliberately never published, and scanning them would fail the gate every slot."""
+    """Everything `git add -A` would publish: tracked files AND untracked files that
+    are not ignored.
+
+    Tracked alone is not enough. crawl.yml runs the gate BEFORE the notify step and
+    commits with `git add -A` after it, so a file written during the run — or simply
+    sitting untracked in the tree, as alerts/msglog/ was — is invisible to a
+    tracked-only scan and published by the very same job. Ignored working files
+    (live findings, balances) are excluded by --exclude-standard, which is exactly
+    the rule git itself applies when deciding what to add."""
     import subprocess
-    try:
-        out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, timeout=60)
-        names = [n for n in out.stdout.splitlines() if n.strip()]
-        if names:
-            for n in names:
-                p = ROOT / n
-                if p.is_file() and not any(part in SKIP_DIRS for part in p.parts): yield p
-            return
-    except Exception:
-        pass
+    names = []
+    for args in (["git", "ls-files"], ["git", "ls-files", "--others", "--exclude-standard"]):
+        try:
+            out = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=60)
+            names += [n for n in out.stdout.splitlines() if n.strip()]
+        except Exception:
+            names = []
+            break
+    if names:
+        for n in dict.fromkeys(names):
+            p = ROOT / n
+            if p.is_file() and not any(part in SKIP_DIRS for part in p.parts): yield p
+        return
     for p in ROOT.rglob("*"):                                   # fallback: whole tree
         if not p.is_file():                                     continue
         if any(part in SKIP_DIRS for part in p.parts):          continue
