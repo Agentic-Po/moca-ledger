@@ -1,19 +1,67 @@
 {
  "version": "2026-08-22.1",
  "note": "Exit-leg operational watch (build plan 1.7). Plaintext on purpose: every address here is public chain infrastructure or already published in this repo's incident evidence. Role words are neutral flow descriptions only. The salted-hash watchlist (detect/watchlist.json) stays the canonical private-membership set; this file is the small polling subset for the per-slot balance watch.",
- "roles": ["pass_through", "hub", "aggregator", "sink", "exchange_deposit"],
+ "roles": [
+  "pass_through",
+  "hub",
+  "aggregator",
+  "sink",
+  "exchange_deposit"
+ ],
  "addresses": [
-  {"address": "0xbd8a4d9638a6d8c2c52e6cb0ce1b22080cc49865", "role": "pass_through"},
-  {"address": "0xbdc42986fd77f6593221c451226382a8b89280b6", "role": "pass_through"},
-  {"address": "0xbe96d4964d89c17c2c8c4d230313b8b6f7f6507a", "role": "hub"},
-  {"address": "0xdbf9d42292028ad1a23c434d039f1b86eddd8451", "role": "aggregator"},
-  {"address": "0x63b7319464c4ad9248c7be8311c41d3d99851ee1", "role": "sink"},
-  {"address": "0x419a26181dcfc6a1b2e42c77a79bd263ecbc3301", "role": "sink"},
-  {"address": "0xe10601a757c5de8bc20e71df37e7d681e292fc5e", "role": "sink"},
-  {"address": "0x012ee4e949b219dfb8187f243663c9812fcba373", "role": "sink"},
-  {"address": "0x79653a9a71481592c7fa232106b082459fe00468", "role": "sink"},
-  {"address": "0x13265985e618553463101285ecbe130b4d069099", "role": "exchange_deposit"},
-  {"address": "0x13f9781bcff08b745bdc420c795a9a6724ebb950", "role": "exchange_deposit"},
-  {"address": "0x3563015e9f5694afe5d8cd86233f77557da704cc", "role": "exchange_deposit"}
+  {
+   "address": "0xbd8a4d9638a6d8c2c52e6cb0ce1b22080cc49865",
+   "role": "pass_through"
+  },
+  {
+   "address": "0xbdc42986fd77f6593221c451226382a8b89280b6",
+   "role": "pass_through"
+  },
+  {
+   "address": "0xbe96d4964d89c17c2c8c4d230313b8b6f7f6507a",
+   "role": "hub"
+  },
+  {
+   "address": "0xdbf9d42292028ad1a23c434d039f1b86eddd8451",
+   "role": "aggregator"
+  },
+  {
+   "address": "0x63b7319464c4ad9248c7be8311c41d3d99851ee1",
+   "role": "sink"
+  },
+  {
+   "address": "0x419a26181dcfc6a1b2e42c77a79bd263ecbc3301",
+   "role": "sink"
+  },
+  {
+   "address": "0xe10601a757c5de8bc20e71df37e7d681e292fc5e",
+   "role": "sink"
+  },
+  {
+   "address": "0x012ee4e949b219dfb8187f243663c9812fcba373",
+   "role": "sink"
+  },
+  {
+   "address": "0x79653a9a71481592c7fa232106b082459fe00468",
+   "role": "sink"
+  },
+  {
+   "address": "0x13265985e618553463101285ecbe130b4d069099",
+   "role": "exchange_deposit",
+   "receipt_alert": true,
+   "note": "single-user deposit address \u2014 any receipt is the cash-out moment"
+  },
+  {
+   "address": "0x13f9781bcff08b745bdc420c795a9a6724ebb950",
+   "role": "exchange_deposit",
+   "receipt_alert": true,
+   "note": "single-user deposit address \u2014 any receipt is the cash-out moment"
+  },
+  {
+   "address": "0x3563015e9f5694afe5d8cd86233f77557da704cc",
+   "role": "exchange_hot",
+   "receipt_alert": false,
+   "note": "shared collector with many unrelated depositors \u2014 track balance for context, do not alert on receipts"
+  }
  ]
 }

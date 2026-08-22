@@ -119,7 +119,7 @@ def _moves(prev, cur, role, T):
         d = b - a
         if d <= -float(T.get(f"drop_{sym}", DEFAULTS[f"drop_{sym}"])):
             yield ("drop", sym, d, b)
-        elif d >= float(T.get("deposit_min", DEFAULTS["deposit_min"])) and role == "exchange_deposit":
+        elif d >= float(T.get("deposit_min", DEFAULTS["deposit_min"])) and role == "exchange_deposit" and meta.get("receipt_alert", True):
             yield ("deposit", sym, d, b)
 
 
