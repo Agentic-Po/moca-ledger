@@ -13409,10 +13409,11 @@
   }
  },
  "sent": {},
- "telegram_offset": 0,
+ "telegram_offset": 238013495,
  "version": 1,
  "acknowledged_seed": {
   "at": "2026-08-22T11:50:12.157214+00:00",
   "count": 428
- }
+ },
+ "watchdog": {}
 }
