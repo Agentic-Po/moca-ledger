@@ -3,7 +3,7 @@ name: crawl-detect-notify
 on:
   workflow_dispatch:          # primary: external pinger every 10 min
   schedule:
-    - cron: "23,53 * * * *"   # backup only (GitHub cron jitter measured p50 +31 min)
+    - cron: "*/10 * * * *"    # best-effort floor (GitHub cron drifts, p50 ~+31 min); an external pinger is the reliable path
 
 permissions:
   contents: write
