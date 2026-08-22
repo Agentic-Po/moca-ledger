@@ -1,13 +1,13 @@
 {
- "run_ts": "2026-08-22T12:12:41+00:00",
+ "run_ts": "2026-08-22T13:08:51+00:00",
  "note": "populated by the crawl workflow",
  "crawl_ok": null,
  "detect_ok": true,
  "notify_ok": null,
- "rows_total": 166144,
- "ledger_last": "2026-08-22 12:11",
- "lag_blocks": 43,
- "mindset_age_h": 2.3,
+ "rows_total": 166228,
+ "ledger_last": "2026-08-22 13:05",
+ "lag_blocks": 92,
+ "mindset_age_h": 3.2,
  "mindset_source": "hashed",
  "open_findings": {
   "page": 22,
@@ -16,21 +16,21 @@
  },
  "fires_last_24h": {
   "10i": 1,
-  "10": 79,
-  "11": 94,
-  "15": 7,
+  "10": 64,
+  "11": 40,
+  "15": 2,
   "4a": 0,
   "4b": 0,
   "S-C": 0,
-  "S-A": 569,
-  "S-G": 2578,
+  "S-A": 559,
+  "S-G": 1106,
   "S-Q": 0,
   "S-Q2": 0,
   "9": 0,
   "EV": 144,
   "S-F": 1,
-  "13": 14,
+  "13": 10,
   "composite": 0
  },
- "outflow_x_now": 0.5
+ "outflow_x_now": 0.6
 }
