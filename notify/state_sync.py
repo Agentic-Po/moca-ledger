@@ -40,8 +40,16 @@ MAX_BYTES  = 900_000      # the Contents API stops serving inline content at 1 M
 MIN_KEEP   = 50           # floor: never let the byte budget empty the state
 
 
+# A case a person is actively holding open is NOT settled, even though acting on it
+# stamps ack_by. Ageing `contained` out first loses the flipped polarity: the next
+# fire on that wallet reads as a routine new finding instead of "the fix did not hold".
+LIVE_STATUS = ("contained", "reported", "watching")
+
+
 def _settled(f):
-    return bool(f.get("status") in ("closed",) or f.get("ack_by") or f.get("ack_role"))
+    if f.get("status") in LIVE_STATUS:
+        return False
+    return bool(f.get("status") == "closed" or f.get("ack_by") or f.get("ack_role"))
 
 
 def _size(state):
@@ -99,6 +107,12 @@ def prune(state):
         # Loud on purpose: this is a finding nobody acknowledged being forgotten.
         print(f"state: WARNING — {live_dropped} of them were still UNACKNOWLEDGED; "
               f"the state is at its size ceiling and open cases are being aged out")
+    # stdout is a public Actions log nobody is reading at 3am. Council §6.6: never
+    # drop a finding without saying so. notify/telegram.py picks this up and posts
+    # it on the next run, then clears it.
+    n = state.get("retired_notice") or {"total": 0, "unacked": 0}
+    state["retired_notice"] = {"total": int(n.get("total", 0)) + len(dropped),
+                               "unacked": int(n.get("unacked", 0)) + live_dropped}
     return state
 
 
@@ -140,32 +154,113 @@ def _remote_sha():
         return None
 
 
+def _remote_state():
+    """(state dict, sha) as it is on the remote right now, or None."""
+    try:
+        d = _req("GET") or {}
+        if d.get("content"):
+            raw = base64.b64decode(d["content"])
+        else:
+            url = d.get("download_url")
+            if not url: return None
+            raw = urllib.request.urlopen(urllib.request.Request(
+                url, headers={"Authorization": f"Bearer {_pat()}"}), timeout=30).read()
+        return json.loads(raw), d.get("sha")
+    except Exception as e:
+        print(f"state: could not read the concurrent write ({type(e).__name__})")
+        return None
+
+
+# Fields recording a decision a PERSON made. If either side of a concurrent write
+# has them and the other does not, they survive: erasing a human's `contained` is
+# the worst outcome a merge can produce.
+HUMAN_FIELDS = ("status", "status_ts", "status_by", "status_note", "value_at_status",
+                "ack_by", "ack_ts", "ack_note", "ack_role", "snooze_until")
+
+
+def merge(remote, local):
+    """Combine a concurrently-written remote state with ours, conservatively.
+
+    Refreshing the sha and re-PUTting the same payload turned optimistic
+    concurrency into last-writer-wins: two workflows in different concurrency
+    groups (crawl */10 and selftest) could each pull, edit and push, and whichever
+    landed second reverted the other wholesale — re-arming `pending_send` on alerts
+    already delivered, or erasing a status a human had just set.
+
+    The rules, in order of what must never be lost:
+      * a human decision on either side wins,
+      * a finding recorded as SENT on either side stays sent (never re-page),
+      * a finding present on only one side is kept (never lose a new detection),
+      * `telegram_offset` takes the higher value (never replay handled updates),
+      * `by_message` and `muted` are unioned, ours winning on a clash.
+
+    Cost of the third rule: a key the LOCAL side deliberately deleted (the daily
+    self-test sweeping its synthetic finding) comes back if the remote still has
+    it. That is a cosmetic loss — the next sweep removes it — and it is the safe
+    side of the trade."""
+    out = dict(remote)
+    out.update({k: v for k, v in local.items() if k not in ("open", "by_message", "muted",
+                                                            "telegram_offset")})
+    out["telegram_offset"] = max(int(remote.get("telegram_offset") or 0),
+                                 int(local.get("telegram_offset") or 0))
+    for field in ("by_message", "muted"):
+        m = dict(remote.get(field) or {}); m.update(local.get(field) or {})
+        if m: out[field] = m
+    ro, lo = remote.get("open") or {}, local.get("open") or {}
+    merged = dict(lo)
+    for k, rf in ro.items():
+        lf = merged.get(k)
+        if lf is None:
+            merged[k] = rf; continue
+        cur = dict(lf)
+        if rf.get("status") and not lf.get("status"):
+            for fld in HUMAN_FIELDS:
+                if fld in rf: cur[fld] = rf[fld]
+        for fld in ("ack_by", "ack_ts", "enrich_requested", "tg_message_id"):
+            if rf.get(fld) and not cur.get(fld): cur[fld] = rf[fld]
+        if rf.get("last_sent") and not cur.get("last_sent"):
+            cur["last_sent"] = rf["last_sent"]; cur["pending_send"] = False
+        merged[k] = cur
+    out["open"] = merged
+    return out
+
+
 def push():
     """Store the updated state back in the private repo.
 
-    Retries, and refreshes the blob sha on a conflict: a dropped push means the next
-    run re-pulls an older copy, re-sends alerts the human already handled and
-    re-dispatches enrichment. Returns False loudly rather than pretending it worked."""
+    Retries; on a conflict it MERGES with whatever landed in between rather than
+    overwriting it (see merge()). A dropped push means the next run re-pulls an
+    older copy, re-sends alerts the human already handled and re-dispatches
+    enrichment. Returns False loudly rather than pretending it worked."""
     if not _pat() or not STATE.exists():
         print("state: nothing to push"); return True
     st = prune(json.loads(STATE.read_text()))
     STATE.write_text(json.dumps(st, indent=1))
-    content = base64.b64encode(STATE.read_bytes()).decode()
     sha_f = STATE.parent / ".state_sha"
     sha = sha_f.read_text().strip() if sha_f.exists() else None
     detail = "unknown"
     for attempt in range(3):
+        content = base64.b64encode(json.dumps(st, indent=1).encode()).decode()
         body = {"message": f"state {os.environ.get('GITHUB_RUN_ID','local')}", "content": content}
         if sha: body["sha"] = sha
         try:
             d = _req("PUT", body)
             sha_f.write_text(d["content"]["sha"])
+            STATE.write_text(json.dumps(st, indent=1))
             print(f"state: pushed {len(st.get('open', {}))} findings, {STATE.stat().st_size} bytes")
             return True
         except urllib.error.HTTPError as e:
             detail = f"http {e.code}"
-            if e.code in (409, 422):          # our sha is stale — refresh it and retry
-                sha = _remote_sha()
+            if e.code in (409, 422):          # somebody else wrote in between
+                cur = _remote_state()
+                if cur is not None:
+                    before = len(st.get("open", {}))
+                    st = prune(merge(cur[0], st))
+                    sha = cur[1]
+                    print(f"state: conflict — merged with the concurrent write "
+                          f"({before} -> {len(st.get('open', {}))} findings)")
+                else:
+                    sha = _remote_sha()
         except Exception as e:
             detail = type(e).__name__
         if attempt < 2:

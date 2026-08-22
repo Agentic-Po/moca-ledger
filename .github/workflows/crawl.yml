@@ -30,9 +30,15 @@ jobs:
       - name: Install deps
         run: pip install -q -r requirements.txt
 
+      # `set -o pipefail` is load-bearing: Actions runs `run:` under `bash -e`, not
+      # `-eo pipefail`, so the step status was tail's, which is always 0. A crashed
+      # crawler left the step GREEN, detect and notify then ran on stale chain data,
+      # and the heartbeat pinged success.
       - name: Crawl to tip
         id: crawl
-        run: python3 crawl.py 2>&1 | tail -5
+        run: |
+          set -o pipefail
+          python3 crawl.py 2>&1 | tail -5
 
       # NEVER add `|| true` here. A failed restore means a stateless run, which
       # re-sends every finding the human already handled. It must stop the job.
@@ -55,6 +61,14 @@ jobs:
       - name: PII gate
         run: python3 tests/test_pii.py --tree .
 
+      # Behaviour, not just privacy. These are the checks that prove the channel does
+      # not go quiet, lie or leak: incident mode ends on its TTL, a cash-out gets a
+      # slot during a burst, a snoozed finding is held rather than dropped, a reply
+      # of "not yet contained" records nothing, and no chart carries a threshold.
+      # They send nothing and never touch alerts/state.json.
+      - name: Alerting behaviour gate
+        run: python3 tests/test_notify.py
+
       - name: Notify (page/notify/digest)
         if: hashFiles('notify/telegram.py') != ''
         env:
@@ -62,9 +76,14 @@ jobs:
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_ACK_USER_IDS: ${{ secrets.TELEGRAM_ACK_USER_IDS }}
         run: |
-          python3 notify/commands.py
-          python3 notify/watchdog.py || echo "watchdog: non-zero exit (advisory only, not fatal)"
-          python3 notify/telegram.py --send-pending
+          rc=0
+          # Alerts must still go out even when the reply loop or the watchdog is
+          # broken — but the run must go RED afterwards. "Green and blind" is the
+          # failure class this whole channel exists to avoid (council §6.2).
+          python3 notify/commands.py || { echo "commands.py exited non-zero"; rc=1; }
+          python3 notify/watchdog.py || { echo "watchdog.py exited non-zero"; rc=1; }
+          python3 notify/telegram.py --send-pending || { echo "telegram.py --send-pending exited non-zero"; rc=1; }
+          exit $rc
 
 
       - name: Save detector memory (private repo)

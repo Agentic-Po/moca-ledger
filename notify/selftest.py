@@ -126,13 +126,19 @@ def leg_deliver(tmpdir):
     f = synthetic_finding()
     tmp.write_text(json.dumps({"open": {SYNTH_KEY: f}, "sent": {},
                                "telegram_offset": 0, "version": 1}, indent=1))
-    o_state, o_render = telegram.STATE, telegram.render
+    o_state, o_render, o_send = telegram.STATE, telegram.render, telegram.send
     try:
         telegram.STATE = tmp
         telegram.render = lambda _f: BANNER
+        # The workflow header says this job "posts nothing to the channel on success".
+        # A `notify`-tier finding outside an incident sends LOUD, so every phone in the
+        # group pinged daily — and the banner explaining it was deleted a second later,
+        # leaving a notification for a message that no longer exists. The real send path
+        # is still exercised; only the notification is suppressed.
+        telegram.send = lambda text, photo=None, silent=False: o_send(text, photo=photo, silent=True)
         rc = telegram.send_pending()
     finally:
-        telegram.STATE, telegram.render = o_state, o_render
+        telegram.STATE, telegram.render, telegram.send = o_state, o_render, o_send
 
     s = json.loads(tmp.read_text())
     sent = (s.get("open") or {}).get(SYNTH_KEY) or {}
@@ -209,6 +215,14 @@ def sweep():
 
 # ------------------------------------------------------------------ report
 
+def _owner():
+    try:
+        return json.loads((ROOT / "detect" / "thresholds.json").read_text()).get(
+            "escalation_owner", "the on-call")
+    except Exception:
+        return "the on-call"
+
+
 def report(ok):
     lines = ["# Daily alerting self-test", "",
              f"`{dt.datetime.now(dt.UTC).strftime('%Y-%m-%d %H:%M')} UTC` — "
@@ -225,13 +239,21 @@ def report(ok):
         failed = [n for good, n, _ in legs if not good]
         try:
             from notify import telegram
+            # Written for whoever reads it at 09:23, not for whoever wrote the legs.
+            plain = {"RENDER": "writing an alert in plain English",
+                     "DELIVER": "sending a message to this channel",
+                     "DISPATCH": "asking for the follow-up account detail",
+                     "CLEAN": "cleaning up after itself",
+                     "RUN": "running at all"}
+            parts = sorted({plain.get(n.split()[0], n.split()[0]) for n in failed})
             telegram.send(
-                "\U0001f534 <b>The daily self-test failed.</b>\n"
-                f"Legs that failed: <b>{', '.join(failed) or 'unknown'}</b>\n\n"
-                "This is the check that proves alerts can still reach this channel. "
-                "Until it passes, assume the detector may be running without being able "
-                "to tell anyone. Run log: "
-                + (os.environ.get("RUN_URL") or "GitHub Actions → selftest"),
+                "\U0001f534 <b>My daily check on myself failed.</b>\n"
+                f"What did not work: <b>{'; '.join(parts) or 'unknown'}</b>\n\n"
+                "This is the check that proves alerts can still reach this channel. Until it "
+                "passes, assume I may be watching the chain without being able to tell anyone "
+                "\u2014 so treat quiet as unknown, not as safe.\n"
+                f"Please tell <b>{_owner()}</b>."
+                + (f"\nRun log: {os.environ['RUN_URL']}" if os.environ.get("RUN_URL") else ""),
                 silent=False)
         except Exception as e:
             print(f"selftest: could not post the failure notice ({type(e).__name__})")
