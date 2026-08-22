@@ -1,12 +1,12 @@
 {
- "run_ts": "2026-08-22T17:26:44+00:00",
+ "run_ts": "2026-08-22T17:28:29+00:00",
  "note": "populated by the crawl workflow",
  "crawl_ok": null,
  "detect_ok": true,
  "notify_ok": null,
- "rows_total": 166904,
+ "rows_total": 166906,
  "ledger_last": "2026-08-22 17:25",
- "lag_blocks": 45,
+ "lag_blocks": 87,
  "mindset_age_h": 7.5,
  "mindset_source": "hashed",
  "open_findings": {
@@ -14,6 +14,6 @@
   "notify": 1,
   "digest": 0
  },
- "outflow_x_now": 1.9,
+ "outflow_x_now": 3.4,
  "fires_last_24h_total": 617
 }
