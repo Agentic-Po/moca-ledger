@@ -96,15 +96,44 @@ def diff_state(state, findings, ctx, fresh_h=24):
             was = TIER_RANK.get(cur.get("tier"), 0)
             now = TIER_RANK.get(d["tier"], 0)
             esc = now > was or (d.get("escalation") and d["escalation"] != cur.get("escalation"))
-            keep = {k: cur[k] for k in ("pending_send", "backfill", "ack_role", "ack_by", "ack_ts", "ack_note", "snooze_until", "last_sent", "send_ok", "view_png") if k in cur}
+            keep = {k: cur[k] for k in ("pending_send", "backfill", "ack_role", "ack_by", "ack_ts", "ack_note",
+                                        "snooze_until", "last_sent", "send_ok", "view_png",
+                                        "status", "status_ts", "status_by", "status_note", "value_at_status") if k in cur}
+            prev_value = cur.get("value")
             cur.update(d)
             cur.update(keep)
-            if esc and not stale:
+            status = cur.get("status")
+            if status == "closed":
+                pass                                      # a closed case stays closed until reopened
+            elif status == "contained":
+                # a fix was applied — ANY further activity is more important, not less
+                if _grew(cur, prev_value, factor=1.0):
+                    cur["pending_send"] = True
+                    cur["escalation"] = "activity after containment"
+                    cur["tier"] = "page"
+                    escalated.append(f)
+            elif status in ("reported", "watching"):
+                # the team knows — only speak up if it is materially worse
+                if _grew(cur, cur.get("value_at_status"), factor=1.5):
+                    cur["pending_send"] = True
+                    cur["escalation"] = "still growing since you reported it"
+                    escalated.append(f)
+            elif esc and not stale:
                 cur["pending_send"] = True
                 cur["escalated"] = True
                 escalated.append(f)
             state["open"][fid] = cur
     return new, escalated
+
+
+def _grew(cur, baseline, factor=1.5):
+    """True when the finding has moved materially past the value it had when a
+    human last set its status. Non-numeric values fall back to 'changed at all'."""
+    try:
+        now, base = float(cur.get("value")), float(baseline)
+        return base > 0 and now >= base * factor
+    except (TypeError, ValueError):
+        return str(cur.get("value")) != str(baseline)
 
 
 def write_incident(f, ctx):

@@ -152,6 +152,31 @@ def humanise(f):
 
     measured = detail or f"{f.get('value')}"
     limit = f.get("threshold")
+    esc = f.get("escalation") or ""
+    if esc == "activity after containment":
+        lines = [f"🛡🚨 <b>This is still happening after the fix was applied</b>",
+                 "<i>Needs attention now — the containment did not hold</i>", "",
+                 f"You marked this contained{(' (' + f['status_note'] + ')') if f.get('status_note') else ''}, "
+                 f"but the same wallet is active again.", "",
+                 f"<b>Measured</b>  {detail or f.get('value')}", "",
+                 f"<b>Why this matters</b>  A fix that does not stop the activity means the money is still "
+                 f"moving and the assumption behind the fix is wrong.", "",
+                 f"<b>What to do</b>  Re-check what was actually paused, and whether the operator moved to "
+                 f"another wallet or another route."]
+        if f.get("key", "").startswith("0x"): lines += ["", f"Wallet  <code>{f['key']}</code>"]
+        if f.get("owner"): lines += ["", f"Who to ask  {f['owner']}"]
+        return "\n".join(lines) + f"\n\n<i>signal {f.get('signal')} · was {f.get('value_at_status')}, now {f.get('value')}</i>\n<code>/reopen {f.get('id','')}</code>"
+    if esc == "still growing since you reported it":
+        lines = [f"📣 <b>Update — the case you reported is still growing</b>",
+                 "<i>Worth a look today</i>", "",
+                 f"This was <b>{f.get('value_at_status')}</b> when you reported it. It is now <b>{f.get('value')}</b>.", "",
+                 f"<b>Measured</b>  {detail or f.get('value')}", "",
+                 f"<b>Why this matters</b>  The report has not stopped it yet — whoever is acting on it may "
+                 f"not have applied a change, or the change is not working.", "",
+                 f"<b>What to do</b>  Chase the action, or mark it <code>/contained &lt;id&gt;</code> once a fix is in "
+                 f"so I can tell you if it holds."]
+        if f.get("key", "").startswith("0x"): lines += ["", f"Wallet  <code>{f['key']}</code>"]
+        return "\n".join(lines) + f"\n\n<i>signal {f.get('signal')} · reported {str(f.get('status_ts'))[:16]}</i>\n<code>/close {f.get('id','')}</code>"
     lines = [f"{icon} <b>{spec['title']}</b>", f"<i>{urgency}</i>", "", what, "",
              f"<b>Measured</b>  {measured}" + (f"  (the level that triggers a look: {limit})" if limit not in (None, "") else ""),
              "", f"<b>Why this matters</b>  {spec['why']}", "",

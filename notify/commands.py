@@ -42,6 +42,57 @@ def find(s, ident):
         if ident and str(f.get("key", "")).lower().startswith(ident): return k, f
     return None, None
 
+STATUSES = {
+    "reported":  ("📣", "team informed, action pending"),
+    "contained": ("🛡", "a fix was applied"),
+    "closed":    ("✅", "resolved"),
+    "watching":  ("👀", "seen, still watching"),
+}
+
+
+def set_status(s, ident, status, uid, note=""):
+    k, f = find(s, ident)
+    if not f: return None, None
+    now = dt.datetime.now(dt.UTC)
+    f["status"] = status
+    f["status_ts"] = now.isoformat()
+    f["status_by"] = uid
+    f["status_note"] = note[:300]
+    f["value_at_status"] = f.get("value")
+    f["pending_send"] = False
+    if status in ("reported", "contained", "closed", "watching"):
+        f["ack_by"] = f.get("ack_by") or uid          # stops the routine repeat
+        f["ack_ts"] = f.get("ack_ts") or now.isoformat()
+    return k, f
+
+
+def cases_text(s):
+    now = dt.datetime.now(dt.UTC)
+    cases = [f for f in (s.get("open") or {}).values()
+             if f.get("status") in ("reported", "contained", "watching")
+             or (f.get("tier") in ("page", "notify") and not (f.get("ack_by") or f.get("ack_role")))]
+    if not cases:
+        return "✅ <b>No open cases.</b>\nNothing is waiting on a person right now."
+    L = ["<b>📁 Open cases</b>", ""]
+    for f in sorted(cases, key=lambda x: str(x.get("status_ts") or x.get("first_ts") or "")):
+        st = f.get("status") or "new"
+        icon, meaning = STATUSES.get(st, ("🆕", "not yet looked at"))
+        age = ""
+        try:
+            ts = dt.datetime.fromisoformat(str(f.get("status_ts") or "").replace("Z", "+00:00"))
+            hrs = (now - ts).total_seconds() / 3600
+            age = f" · {hrs:.0f} h ago" if hrs < 48 else f" · {hrs/24:.0f} d ago"
+        except Exception:
+            pass
+        L.append(f"{icon} <b>{st}</b>{age} — {f.get('detail') or f.get('signal')}")
+        if f.get("key", "").startswith("0x"):
+            L.append(f"    <code>{f['key'][:20]}…</code>  <code>/close {f.get('id')}</code>")
+        if f.get("status_note"):
+            L.append(f"    \"{f['status_note']}\"")
+    L += ["", "<i>/reported &lt;id&gt; · /contained &lt;id&gt; · /close &lt;id&gt; · /watching &lt;id&gt;</i>"]
+    return "\n".join(L)
+
+
 def status_text(s):
     op = [f for f in (s.get("open") or {}).values() if f.get("ack_by") != "go-live-seed"]
     live = [f for f in op if not f.get("ack_by")]
@@ -77,7 +128,41 @@ def main():
         if cmd == "/status":
             reply(status_text(s), mid)
         elif cmd == "/help":
-            reply("Commands: /status · /ack &lt;id&gt; [note] · /snooze &lt;id&gt; &lt;hours&gt; · /mute &lt;signal&gt; &lt;hours&gt; · /unmute &lt;signal&gt;", mid)
+            reply("<b>Reading the situation</b>\n"
+                  "/status — is anything waiting on me right now\n"
+                  "/cases — everything open, with how long it has been open\n\n"
+                  "<b>Telling me where a case stands</b>\n"
+                  "/reported &lt;id&gt; [note] — team informed, action pending. I stop repeating it, "
+                  "but I will tell you if it keeps growing.\n"
+                  "/contained &lt;id&gt; [note] — a fix was applied. Any further activity after this "
+                  "point pages you loudly, because it means the fix did not hold.\n"
+                  "/watching &lt;id&gt; — seen, no action yet, keep an eye on it\n"
+                  "/close &lt;id&gt; [note] — resolved\n"
+                  "/reopen &lt;id&gt;\n\n"
+                  "<b>Quieting noise</b>\n"
+                  "/ack &lt;id&gt; [note] · /snooze &lt;id&gt; &lt;hours&gt; · /mute &lt;signal&gt; &lt;hours&gt; · /unmute &lt;signal&gt;", mid)
+        elif cmd == "/cases":
+            reply(cases_text(s), mid)
+        elif cmd in ("/reported", "/contained", "/close", "/watching", "/reopen") and args:
+            if not allowed: reply("not authorised", mid); continue
+            st = {"/reported": "reported", "/contained": "contained", "/close": "closed",
+                  "/watching": "watching", "/reopen": None}[cmd]
+            if cmd == "/reopen":
+                k, f = find(s, args[0])
+                if not f: reply(f"no case matching <code>{args[0]}</code>", mid); continue
+                for fld in ("status", "status_ts", "status_note", "ack_by", "ack_ts", "value_at_status"):
+                    f.pop(fld, None)
+                reply(f"↩️ reopened <code>{f.get('id')}</code> — it will alert again if it fires", mid)
+            else:
+                k, f = set_status(s, args[0], st, uid, " ".join(args[1:]))
+                if not f: reply(f"no case matching <code>{args[0]}</code>", mid); continue
+                icon, meaning = STATUSES[st]
+                extra = {"reported": "I will stay quiet unless it keeps growing.",
+                         "contained": "Any further activity from now on will page you — that would mean the fix did not hold.",
+                         "closed": "Removed from open cases; still in the record.",
+                         "watching": "No repeats; I will tell you if it changes materially."}[st]
+                reply(f"{icon} <b>{st}</b> — <code>{f.get('id')}</code> ({meaning})\n{extra}", mid)
+            changed += 1
         elif cmd in ("/ack", "/snooze") and args:
             if not allowed: reply("not authorised", mid); continue
             k, f = find(s, args[0])
