@@ -29,6 +29,7 @@ def render(finding, ctx, path):
             "4b": _fanin, "S-C": _fanin, "4a": _rate, "15": _rate, "EV": _rate,
             "S-Q": _rate, "S-Q2": _rate,
             "S-G": _table, "S-F": _table, "S-A": _burst,
+            "S-X": _balances,
         }.get(finding.signal, _generic)
         fig = fn(finding, ctx)
         fig.savefig(path, bbox_inches="tight")
@@ -161,6 +162,30 @@ def _table(f, ctx):
     else:
         ax.text(0.5, 0.5, "\n".join(f.headline) or f.detail, ha="center", va="center", fontsize=9)
     ax.set_title(f"{f.signal} · {f.key[:12]} · {utc(f.ts + SLOT)} UTC", fontsize=10)
+    return fig
+
+
+def _balances(f, ctx):
+    """S-X exit-leg balance watch: snapshot table of every watched address's
+    balances (from the finding's evidence rows), the moved address highlighted."""
+    fig, ax = plt.subplots(**FIG)
+    ax.axis("off")
+    rows = [[str(c)[:14] for c in r] for r in (f.evidence or [])][:16]
+    moved = f.key.split("exit:")[-1][:10]
+    if len(rows) > 1:
+        tb = ax.table(cellText=rows[1:], colLabels=rows[0], loc="center")
+        tb.auto_set_font_size(False)
+        tb.set_fontsize(7)
+        tb.scale(1, 1.2)
+        for (r, c), cell in tb.get_celld().items():
+            if r == 0:
+                cell.set_facecolor("#e8e8e8")
+            elif rows[r][0].startswith(moved):
+                cell.set_facecolor("#f6d0d0")
+    else:
+        ax.text(0.5, 0.5, "\n".join(f.headline) or f.detail, ha="center", va="center", fontsize=9)
+    ax.set_title(f"S-X balance watch · {moved} · {utc(f.ts)} UTC · " + "; ".join(f.headline[:1]),
+                 fontsize=10)
     return fig
 
 

@@ -1,5 +1,5 @@
 {
- "version": "2026-08-22.1",
+ "version": "2026-08-22.2",
  "note": "committed defaults; live values may be overridden at runtime by the THRESHOLDS_JSON env var (shadow mode). CI always tests these defaults.",
  "unit_frozen": 115.0,
  "conc_window_h": 6,
@@ -43,5 +43,16 @@
  "outflow_x_field": 8,
  "composite_min_signals": 2,
  "composite_window_h": 6,
+ "balance_watch": {
+  "note": "exit-leg balance watch floors (S-X). drop_* = minimum decrease that fires notify, in token units; MENTE uses the MOCA-equivalent floor. deposit_min = any receipt above this at an exchange_deposit address fires notify.",
+  "drop_moca": 1000,
+  "drop_mente": 1000,
+  "drop_eth": 0.05,
+  "drop_weth": 0.05,
+  "drop_usdc": 100,
+  "deposit_min": 0.000001,
+  "pace_s": 1.0,
+  "budget_s": 90
+ },
  "escalation_owner": "UNASSIGNED (see runbook)"
 }

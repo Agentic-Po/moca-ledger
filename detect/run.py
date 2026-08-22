@@ -36,6 +36,9 @@ def parse_args(argv=None):
     p.add_argument("--quiet", action="store_true", help="counts only on stdout")
     p.add_argument("--as-of", type=int, default=None, metavar="BLOCK", help="ignore rows after this block")
     p.add_argument("--loop-if-hot", action="store_true")
+    p.add_argument("--no-balance", action="store_true",
+                   help="skip the exit-leg balance watch (it is also skipped on --dry-run, "
+                        "--as-of, or SKIP_BALANCE_WATCH=1 — replay/CI never make network calls)")
     p.add_argument("--max-loop-min", type=int, default=8)
     p.add_argument("--data", default=os.path.join(ROOT, "data"))
     p.add_argument("--parity-json", default=None, metavar="PATH",
@@ -163,6 +166,17 @@ def one_pass(a):
         with open(a.parity_json, "w") as fh:
             json.dump(summary(ctx), fh, indent=1)
     findings = current_findings(ctx)
+    # ---- exit-leg balance watch (build plan 1.7): live slots only, never in
+    # replay/CI (--dry-run, --as-of, --no-balance and SKIP_BALANCE_WATCH=1 all skip it)
+    if not (a.dry_run or a.no_balance or a.as_of is not None
+            or os.environ.get("SKIP_BALANCE_WATCH")):
+        try:
+            import balance_watch
+            for f in balance_watch.poll(root=ROOT, thresholds=ctx.thr, quiet=a.quiet):
+                ctx.fires.setdefault(f.signal, []).append(f)
+                findings[f.id] = f
+        except Exception as e:  # fail-soft: the ledger signals must still land
+            print(f"balance_watch: soft-fail ({type(e).__name__})")
     state = load_state()
     new, escalated = diff_state(state, findings, ctx)
     n_inc = 0
