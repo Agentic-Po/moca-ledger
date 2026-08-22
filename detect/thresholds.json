@@ -6,9 +6,9 @@
  "conc_min_n_page": 50,
  "conc_min_n_confirm": 100,
  "conc_top1_page": 0.45,
- "conc_top1_notify": 0.30,
- "conc_top3_page": 0.60,
- "conc_top1_internal_digest": 0.60,
+ "conc_top1_notify": 0.3,
+ "conc_top3_page": 0.6,
+ "conc_top1_internal_digest": 0.6,
  "conc_per_creator_hour": 50,
  "burst_n": 10,
  "burst_s": 60,
@@ -50,9 +50,10 @@
   "drop_eth": 0.05,
   "drop_weth": 0.05,
   "drop_usdc": 100,
-  "deposit_min": 0.000001,
+  "deposit_min": 1e-06,
   "pace_s": 1.0,
   "budget_s": 90
  },
- "escalation_owner": "UNASSIGNED (see runbook)"
+ "escalation_owner": "Po (interim) \u2014 @Po_Chu on Telegram",
+ "escalation_note": "Interim owner until platform names someone who can pause a creator's reward. Replace both fields together."
 }

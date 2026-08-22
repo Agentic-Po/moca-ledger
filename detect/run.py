@@ -83,6 +83,7 @@ def diff_state(state, findings, ctx, fresh_h=24):
         d["mindset_source"] = ctx.mindset_source
         d["unit_source"] = ctx.unit_source.get(S.day_str(f.ts), "frozen")
         d["type_verified"] = False
+        d["owner"] = ctx.thr.get("escalation_owner") or d.get("owner") or "UNASSIGNED"
         stale = (ctx.t1 - f.ts) > fresh_h * 3600
         cur = state["open"].get(fid)
         if cur is None:

@@ -20,6 +20,10 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 1 }
 
+      - name: Heartbeat ping (start)
+        env: { HC_PING_URL: "${{ secrets.HC_PING_URL }}" }
+        run: curl -fsS -m 10 "$HC_PING_URL/start" > /dev/null || true
+
       - uses: actions/setup-python@v5
         with: { python-version: "3.12", cache: pip }
 
@@ -45,17 +49,6 @@ jobs:
       - name: PII gate
         run: python3 tests/test_pii.py --tree .
 
-      - name: Commit state
-        run: |
-          git config user.name  "moca-ledger-bot"
-          git config user.email "actions@users.noreply.github.com"  # pii-ok: github bot identity
-          git add -A                                  # -A, never an explicit list (see 2026-07-20 incident)
-          git diff --cached --quiet || git commit -q -m "crawl $(date -u +'%Y-%m-%d %H:%M') UTC"
-          for i in 1 2 3; do
-            git pull --rebase -q origin main || git rebase --abort || true
-            git push -q origin main && break || sleep 5
-          done
-
       - name: Notify (page/notify/digest)
         if: hashFiles('notify/telegram.py') != ''
         env:
@@ -75,10 +68,26 @@ jobs:
           PRIVATE_REPO_PAT: ${{ secrets.PRIVATE_REPO_PAT }}
         run: python3 notify/request_enrichment.py
 
-      - name: Heartbeat ping (success only)
+      - name: Commit state
+        run: |
+          git config user.name  "moca-ledger-bot"
+          git config user.email "actions@users.noreply.github.com"  # pii-ok: github bot identity
+          git add -A                                  # -A, never an explicit list (see 2026-07-20 incident)
+          git diff --cached --quiet || git commit -q -m "crawl $(date -u +'%Y-%m-%d %H:%M') UTC"
+          for i in 1 2 3; do
+            git pull --rebase -q origin main || git rebase --abort || true
+            git push -q origin main && break || sleep 5
+          done
+
+      - name: Heartbeat ping (success)
         if: success()
         env: { HC_PING_URL: "${{ secrets.HC_PING_URL }}" }
         run: curl -fsS -m 10 --retry 2 "$HC_PING_URL" > /dev/null && echo pinged
+
+      - name: Heartbeat ping (failure)
+        if: failure()
+        env: { HC_PING_URL: "${{ secrets.HC_PING_URL }}" }
+        run: curl -fsS -m 10 --retry 2 "$HC_PING_URL/fail" > /dev/null || true
 
       - name: Failure notice (deduped)
         if: failure()

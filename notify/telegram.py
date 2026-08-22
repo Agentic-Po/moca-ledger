@@ -78,9 +78,24 @@ def save_state(s):
     STATE.parent.mkdir(parents=True, exist_ok=True)
     STATE.write_text(json.dumps(s, indent=1))
 
+def _suppressed(f, s):
+    """An acked, snoozed or muted finding must never re-send — otherwise every run
+    re-pages what the human already handled."""
+    if f.get("ack_by") or f.get("ack_role"): return "acked"
+    sn = f.get("snooze_until")
+    if sn and dt.datetime.now(dt.UTC).isoformat() < str(sn): return "snoozed"
+    m = (s.get("muted") or {}).get(f.get("signal"))
+    if m and dt.datetime.now(dt.UTC).isoformat() < str(m): return "muted"
+    return None
+
+
 def send_pending():
     """Send findings marked pending in alerts/state.json (written by detect/run.py)."""
-    s = load_state(); pending = [f for f in s.get("open", {}).values() if f.get("pending_send")]
+    s = load_state()
+    for f in s.get("open", {}).values():                       # clear suppressed ones
+        if f.get("pending_send") and _suppressed(f, s):
+            f["pending_send"] = False; f["suppressed"] = _suppressed(f, s)
+    pending = [f for f in s.get("open", {}).values() if f.get("pending_send")]
     if not pending:
         print("nothing pending"); return 0
     digest, loud = [f for f in pending if f.get("tier") == "digest"], [f for f in pending if f.get("tier") != "digest"]
@@ -88,12 +103,22 @@ def send_pending():
         f["pending_send"] = False; f["last_sent"] = dt.datetime.now(dt.UTC).isoformat()
         save_state(s)                                       # commit intent BEFORE sending
         r = send(render(f), photo=f.get("view_png"))
-        f["send_ok"] = bool(r.get("ok")); save_state(s)
+        f["send_ok"] = bool(r.get("ok")); f["send_error"] = None if r.get("ok") else str(r.get("error"))[:80]
+        save_state(s)
         print(f["tier"], f.get("signal"), "->", r.get("ok"))
+    failed = [f for f in s.get("open", {}).values() if f.get("send_ok") is False]
+    if failed and not s.get("send_failure_alarmed"):
+        s["send_failure_alarmed"] = True; save_state(s)
+        send(f"🔴 <b>{len(failed)} alert(s) failed to send</b> — check the run log; findings are in the repo index", silent=False)
+    elif not failed and s.get("send_failure_alarmed"):
+        s["send_failure_alarmed"] = False; save_state(s)
     if digest:
         for f in digest: f["pending_send"] = False; f["last_sent"] = dt.datetime.now(dt.UTC).isoformat()
         save_state(s)
-        body = "📋 <b>Digest</b>\n" + "\n".join(f"• {d.get('signal')} <code>{d.get('key','')}</code> {d.get('value','')}" for d in digest[:25])
+        shown = digest[:25]
+        body = "📋 <b>Digest</b>\n" + "\n".join(f"• {d.get('signal')} <code>{d.get('key','')}</code> {d.get('value','')}" for d in shown)
+        if len(digest) > len(shown):
+            body += f"\n… and <b>{len(digest) - len(shown)}</b> more (see the repo index)"
         send(body, silent=True); save_state(s)
     return 0
 

@@ -67,7 +67,7 @@ class Finding:
     ts: int = 0                 # fire time (slot end, ledger time)
     headline: list = field(default_factory=list)   # up to 3 strings
     recommended_action: str = ""
-    owner: str = "UNASSIGNED"
+    owner: str = ""   # filled from thresholds.escalation_owner at build time
     as_of_block: int = 0
     evidence: list = field(default_factory=list)   # ledger rows / tuples
     view_png: str = None
