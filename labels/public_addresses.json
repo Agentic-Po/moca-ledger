@@ -1,0 +1,27 @@
+{
+ "note": "Addresses that MAY appear in tracked files: public chain infrastructure and token contracts. Everything else is operational intelligence and must be hashed or untracked.",
+ "generated": "2026-08-22",
+ "infrastructure": [
+  "0xbd956171f5b50936f0ad1c4db80c022bd2442519",
+  "0xb15afc65532f8ec4d39db521ad7eb5b9e9ef5acf",
+  "0xd85096faec1ac03075667b4c1a1661f5623bf111",
+  "0x4d3021a52b31ffafde3c46450d02c72807c3a178",
+  "0x1c5ebb794335b72d773df2fd8f80f3d1afbb75dd",
+  "0x2a5eeea4d91042f779ee6014f4f6fd41f375262d",
+  "0xdc55a0291029665fecff5ca5add0e51dd2964877",
+  "0x411d2c093e4c2e69bf0d8e94be1bf13dadd879c6",
+  "0xc8f6b8ba0dc0f175b568b99440b0867f69a29265",
+  "0xbc1d9760bd6ca468ca9fb5ff2cfbeac35d86c973",
+  "0xbe96d4964d89c17c2c8c4d230313b8b6f7f6507a",
+  "0x0000000000000000000000000000000000000000"
+ ],
+ "token_contracts": {
+  "MOCA": "0x2b11834ed1feaed4b4b3a86a6f571315e25a884d",
+  "MENTE": "0x4cd9a847f39106e19a4e41aea8a232e915c82af5",
+  "WETH": "0x4200000000000000000000000000000000000006",
+  "USDC": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+ },
+ "event_topics": {
+  "Transfer": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+ }
+}

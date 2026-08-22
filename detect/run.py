@@ -95,7 +95,7 @@ def diff_state(state, findings, ctx, fresh_h=24):
             was = TIER_RANK.get(cur.get("tier"), 0)
             now = TIER_RANK.get(d["tier"], 0)
             esc = now > was or (d.get("escalation") and d["escalation"] != cur.get("escalation"))
-            keep = {k: cur[k] for k in ("pending_send", "backfill", "ack_role", "last_sent", "send_ok", "view_png") if k in cur}
+            keep = {k: cur[k] for k in ("pending_send", "backfill", "ack_role", "ack_by", "ack_ts", "ack_note", "snooze_until", "last_sent", "send_ok", "view_png") if k in cur}
             cur.update(d)
             cur.update(keep)
             if esc and not stale:
@@ -135,7 +135,7 @@ def heartbeat(ctx, state, ok=True):
         except Exception:
             hb = {}
     now = dt.datetime.now(dt.UTC)
-    open_f = [v for v in state["open"].values() if not v.get("ack_role")]
+    open_f = [v for v in state["open"].values() if not (v.get("ack_role") or v.get("ack_by"))]
     per_day = {}
     for sid, fires in ctx.fires.items():
         per_day[sid] = sum(1 for f in fires if f.ts >= ctx.t1 - DAY)
@@ -152,11 +152,32 @@ def heartbeat(ctx, state, ok=True):
             "notify": sum(1 for v in open_f if v.get("tier") == "notify"),
             "digest": sum(1 for v in open_f if v.get("tier") == "digest"),
         },
-        "fires_last_24h": per_day,
+        "fires_last_24h_total": sum(per_day.values()) if isinstance(per_day, dict) else per_day,
         "outflow_x_now": getattr(ctx, "outflow_x", {}).get(ctx.s1),
     })
     with open(HEARTBEAT, "w") as fh:
         json.dump(hb, fh, indent=1)
+
+
+def write_public_state(state, ctx):
+    """Publishable projection of the findings: hashed key, tier, first seen.
+
+    The plaintext state names which wallets we flagged, at what value against which
+    threshold, plus the recommended action — a calibration oracle for the operator
+    it is watching. It is gitignored; this hashed projection is what ships."""
+    import hashlib
+    salt = os.environ.get("MINDSET_SALT", "")
+    h = lambda x: hashlib.sha256((salt + str(x).lower()).encode()).hexdigest()[:16]
+    pub = {"generated_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+           "note": "hashed projection; entity keys are salted hashes, thresholds and actions are private",
+           "hash": "sha256(salt+lower(key))[:16]",
+           "findings": sorted(
+               ({"h": h(v.get("key")), "signal": v.get("signal"), "tier": v.get("tier"),
+                 "first_seen": v.get("first_ts"), "acked": bool(v.get("ack_role") or v.get("ack_by"))}
+                for v in state.get("open", {}).values()),
+               key=lambda r: str(r.get("first_seen")))}
+    with open(os.path.join(ROOT, "alerts", "state-public.json"), "w") as fh:
+        json.dump(pub, fh, indent=1)
 
 
 def one_pass(a):
@@ -188,6 +209,7 @@ def one_pass(a):
         os.makedirs(os.path.dirname(STATE), exist_ok=True)
         with open(STATE, "w") as fh:
             json.dump(state, fh, indent=1)
+        write_public_state(state, ctx)
         heartbeat(ctx, state)
     # ---- stdout policy: quiet = counts only, never entities/actions
     tiers = lambda lst: {t: sum(1 for f in lst if f.tier == t) for t in ("page", "notify", "digest") if any(f.tier == t for f in lst)}
@@ -206,7 +228,7 @@ def one_pass(a):
             print(f"  {tier:6s} {sid:5s} {key[:10]:12s} x{len(lst)}  last {utc(lst[-1].ts)}  {lst[-1].detail[:60]}")
         print(f"state: {len(new)} new, {len(escalated)} escalated, "
               f"{sum(1 for v in state['open'].values() if v.get('pending_send'))} pending send")
-    hot = any(v.get("tier") in ("page", "notify") and not v.get("ack_role") and v.get("pending_send")
+    hot = any(v.get("tier") in ("page", "notify") and not (v.get("ack_role") or v.get("ack_by")) and v.get("pending_send")
               for v in state["open"].values())
     return hot
 

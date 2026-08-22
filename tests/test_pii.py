@@ -28,10 +28,40 @@ DENY = [
 BAD_NAMES = re.compile(r"(minds\.csv|humans\.csv|topup\.csv|events_identify|events_raw|bank_transfers\.csv|labels\.json$|identity-lists|warehouse|reconcile-inputs|analysis/|council/)")
 ALLOW_LINE = re.compile(r"pii-ok")   # explicit per-line escape hatch
 
+def _public_addresses():
+    """Addresses allowed to appear in tracked files (public infrastructure + token
+    contracts). Any other bare address is operational intelligence: which wallets we
+    flagged, at what value against which threshold, is an oracle for the operator."""
+    ok = {"0x" + "0" * 40}
+    try:
+        d = json.loads((ROOT / "labels" / "public_addresses.json").read_text())
+        ok |= {a.lower() for a in d.get("infrastructure", [])}
+        ok |= {a.lower() for a in d.get("token_contracts", {}).values()}
+        ok |= {a.lower()[:42] for a in d.get("event_topics", {}).values()}
+    except Exception:
+        pass
+    return ok
+
+PUBLIC_ADDR = _public_addresses()
+ADDR_RX = re.compile(r"0x[0-9a-f]{40}", re.I)
+
 def files():
-    for p in ROOT.rglob("*"):
-        if not p.is_file():                                    continue
-        if any(part in SKIP_DIRS for part in p.parts):         continue
+    """Only TRACKED files matter: untracked working files (live findings, balances)
+    are deliberately never published, and scanning them would fail the gate every slot."""
+    import subprocess
+    try:
+        out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, timeout=60)
+        names = [n for n in out.stdout.splitlines() if n.strip()]
+        if names:
+            for n in names:
+                p = ROOT / n
+                if p.is_file() and not any(part in SKIP_DIRS for part in p.parts): yield p
+            return
+    except Exception:
+        pass
+    for p in ROOT.rglob("*"):                                   # fallback: whole tree
+        if not p.is_file():                                     continue
+        if any(part in SKIP_DIRS for part in p.parts):          continue
         yield p
 
 def main():
@@ -58,6 +88,9 @@ def main():
             for name, rx in DENY:
                 m = rx.search(line)
                 if m: hits.append((rel, i, name, m.group(0)[:60]))
+            for a in ADDR_RX.findall(line):                      # bare-address rule
+                if a.lower() not in PUBLIC_ADDR:
+                    hits.append((rel, i, "wallet address (operational intelligence)", a)); break
     if hits:
         print(f"pii: FAIL — {len(hits)} hit(s) in {checked} scanned files")
         for rel, ln, name, frag in hits[:60]: print(f"  {rel}:{ln}  {name}: {frag}")

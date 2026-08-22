@@ -4,3 +4,9 @@ __pycache__/
 .DS_Store
 detect/cache/
 *.csv
+
+# findings and balances are operational intelligence — never published
+alerts/state.json
+incidents/
+detect/balances.json
+labels/exit_watch.json

@@ -1,9 +1,9 @@
 name: crawl-detect-notify
 
 on:
-  workflow_dispatch:          # primary: external pinger every 10 min
+  workflow_dispatch:          # manual / ad-hoc runs
   schedule:
-    - cron: "*/10 * * * *"    # best-effort floor (GitHub cron drifts, p50 ~+31 min); an external pinger is the reliable path
+    - cron: "*/10 * * * *"    # the only automatic trigger (council decision 2026-08-22); GitHub cron drifts, that is accepted
 
 permissions:
   contents: write
@@ -34,8 +34,13 @@ jobs:
         id: detect
         if: hashFiles('detect/run.py') != ''
         env:
-          MINDSET_SALT: ${{ secrets.MINDSET_SALT }}
-        run: python3 detect/run.py --quiet
+          MINDSET_SALT:    ${{ secrets.MINDSET_SALT }}
+          EXIT_WATCH_JSON: ${{ secrets.EXIT_WATCH_JSON }}
+        run: |
+          if [ -n "$EXIT_WATCH_JSON" ]; then
+            printf '%s' "$EXIT_WATCH_JSON" > labels/exit_watch.json
+          fi
+          python3 detect/run.py --quiet
 
       - name: PII gate
         run: python3 tests/test_pii.py --tree .

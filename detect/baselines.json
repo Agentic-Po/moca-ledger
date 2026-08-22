@@ -149,24 +149,6 @@
     "tx": 68,
     "moca": 15758,
     "senders": 67,
-    "dests": [
-     [
-      "0xa4ea74fa48fba93fdb666a595679f46b0ba557de",
-      2
-     ],
-     [
-      "0x544deff45c7ddcf48d0e36f799f0c7b696e4a038",
-      1
-     ],
-     [
-      "0xc3be0928c94fc18f83d89ad0b4384883648d76f1",
-      1
-     ],
-     [
-      "0x22f1828d52841c3de0dd9ce2213e1cece4edd559",
-      1
-     ]
-    ],
     "sender_created": [
      [
       "2026-07-03",
@@ -176,7 +158,8 @@
       "2026-06-03",
       2
      ]
-    ]
+    ],
+    "dests_count": 4
    }
   },
   "daily_creator_rewards_organic": {
