@@ -95,7 +95,7 @@ SIGNALS = {
         "title": "A wallet we are already watching just moved",
         "what": "A wallet connected to the August incident has moved MOCA again.",
         "why": "This wallet is on the watch list from the August incident. Movement means the operator is active again.",
-        "do": "Read the tier-2 message that follows for who it is, then decide if it needs escalating.",
+        "do": "A follow-up message with the account detail may arrive underneath this one. Read it, then decide if this needs escalating.",
         "normal": "These wallets have been quiet since August — that is why they are on the list.",
     },
     "S-Q": {
@@ -161,7 +161,7 @@ SIGNALS = {
         "title": "Several warning signs are pointing at the same wallets",
         "what": "More than one alert has fired on connected wallets within a few hours.",
         "why": "Individually each sign can be innocent. Together, on connected wallets and within a few hours, they are the shape the August incident had.",
-        "do": "Treat this like a page: read the tier-2 detail, then decide whether to ask for a pause.",
+        "do": "Treat this like a page: read the individual alerts for these wallets, then decide whether to ask for a pause.",
         "normal": "Alerts normally fire alone, on unconnected wallets.",
     },
 }
@@ -171,7 +171,7 @@ FALLBACK = {
     # Not "{value}": that repeated the Measured line word for word two lines above it.
     "what": "This signal has no hand-written description yet, so the measurement below is all there is.",
     "why": "This pattern is outside what normal platform activity produces.",
-    "do": "Read the detail below and the tier-2 message that follows.",
+    "do": "Read the measurement below. A follow-up message with more detail may arrive underneath it.",
 }
 
 TIER_WORD = {
@@ -378,28 +378,23 @@ def _m_newrec(f):                                 # 9
     word = {"equip": "equip-sized", "airdrop": "airdrop-sized", "other": "other-sized"}.get(band, "Treasury")
     m = re.match(r"(\d+)/h\s*>\s*[\d.]+\s*for\s*(\d+) slots", str(f.get("detail") or ""))
     if m:
-        slots = int(m.group(2))
-        hours = slots * 10 / 60.0
-        span = f"{hours:.0f} hours" if hours >= 1.5 else f"{slots * 10} minutes"
+        hours = int(m.group(2)) * 10 / 60.0
+        span = f"about {hours:.0f} hours" if hours >= 1.5 else "more than an hour"
         return (f"{int(m.group(1))} wallets received their first-ever {word} payout inside an hour, "
                 f"and it stayed that high for {span}.")
     n = _int(f.get("value"))
     return f"{n} wallets received their first-ever {word} payout inside an hour." if n is not None else None
 
 
-_TIMES = {2: "twice", 3: "three times", 4: "four times", 5: "five times"}
-
-
 def _m_velocity(f):                               # EV
+    """No multiple. "about three times what a normal day produces" alongside the
+    measured value solves for the baseline AND the multiplier, which is the exact
+    constraint this module exists to keep out of a forwardable channel."""
     n = _int(f.get("value"))
     if n is None:
         return None
-    m = re.match(r"([\d,]+)/24h\s*>=\s*(\d+)\s*x", str(f.get("detail") or ""))
-    if m:
-        mult = _TIMES.get(int(m.group(2)), f"{m.group(2)} times")
-        return (f"Across the whole platform, {n:,} equip-sized payouts went out in 24 hours — "
-                f"about {mult} what a normal day produces.")
-    return f"Across the whole platform, {n:,} equip-sized payouts went out in 24 hours."
+    return (f"Across the whole platform, {n:,} equip-sized payouts went out in 24 hours \u2014 "
+            f"well above an ordinary day.")
 
 
 def _m_exit(f):                                   # 13
@@ -410,11 +405,15 @@ def _m_exit(f):                                   # 13
 
 
 def _m_composite(f):                              # composite
-    sids = str(f.get("detail") or "").strip()
+    """Count and shape, never the list of codes.
+
+    "10, S-A" is unreadable to the colleague this channel exists for, and to the
+    operator it is a map of which detectors are live."""
     n = _int(f.get("value"))
-    if not sids or n is None:
+    if n is None:
         return None
-    return f"{n} different alerts fired on connected wallets inside 6 hours: {sids}."
+    return (f"{n} different alerts fired on wallets connected to each other within a few "
+            f"hours \u2014 the alerts are listed on the individual messages for those wallets.")
 
 
 MEASURED = {
@@ -463,6 +462,46 @@ def _inferred_note(f, sentence):
     if not _TYPED.search(str(sentence or "")):
         return None
     return f"<i>{HEDGE}.</i>"
+
+
+def _esc(x):
+    """A human's own note comes back out inside parse_mode=HTML. A note containing
+    `<` makes Telegram answer 400 "can't parse entities" and the whole page fails;
+    a note containing an <a href> injects a clickable link into every rendering."""
+    return str(x or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _normal_for(f, spec):
+    """What ordinary activity looks like, in the SAME units as the Measured sentence.
+
+    Signal 10 has two variants: a share ("62% of payouts") and a count ("148 payouts
+    in the last hour"). One `normal` phrased as a share sat under both, so the count
+    variant asked the reader to compare 148 against "about a tenth" of an unstated
+    total."""
+    sig = str(f.get("signal", "")).lstrip("#")
+    if sig in ("10", "10i", "10n") and str(f.get("window") or "") == "60min":
+        return "A busy real creator picks up a few equip rewards an hour, not dozens."
+    return spec.get("normal")
+
+
+def _grew_words(f, verb="marked it contained"):
+    """How much it has moved since a human last judged it, WITHOUT bare numbers.
+
+    "It was 148 when you marked it; it is 302 now" gives a reader with no units no
+    way to tell whether that is three times worse or eleven percent worse \u2014 and the
+    Measured sentence two lines below already carries the same quantity in words."""
+    try:
+        now, base = float(f.get("value")), float(f.get("value_at_status"))
+        if base > 0 and now > 0:
+            r = now / base
+            if r >= 1.15:
+                return f"It is now about <b>{r:.1f}\u00d7</b> what it was when you {verb} \u2014 see the measurement below."
+            if r <= 0.85:
+                return f"It is now lower than when you {verb}, but still active \u2014 see the measurement below."
+            return f"It is at about the same level as when you {verb} \u2014 see the measurement below."
+    except (TypeError, ValueError):
+        pass
+    return f"The measurement below is where it stands now, against when you {verb}."
 
 
 def _footer(f):
@@ -550,9 +589,12 @@ def money_lines(f):
         line += f" (~{dollars})"
     line += f" since {_since_word(f.get('first_ts'))}"
     if rate > 0:
+        # Same units on both halves of the line. A total in MOCA-and-dollars beside a
+        # rate in dollars only reads as two different quantities.
         rate_usd = p.fmt_usd(p.usd(rate)[0]) if p else None
-        line += f", about {rate_usd}/h" if rate_usd else f", about {rate:,.0f} MOCA/h"
-    return [f"<b>Money</b>  {line}", f"<i>{HEDGE} · {note}</i>"]
+        line += f", about {rate:,.0f} MOCA/h" + (f" (~{rate_usd}/h)" if rate_usd else "")
+    return [f"<b>Money</b>  {line}",
+            f"<i>Treasury payouts to this wallet only \u00b7 {HEDGE} \u00b7 {note}</i>"]
 
 
 # ------------------------------------------------------------------ the message
@@ -564,8 +606,10 @@ def humanise(f):
     icon, urgency = TIER_WORD.get(f.get("tier", "notify"), TIER_WORD["notify"])
 
     meas = measured(f)
-    inferred = _inferred_note(f, meas)
     money = money_lines(f)
+    # The money block carries the hedge already. Printing it again as an orphan
+    # paragraph three lines above teaches the reader to skip both.
+    inferred = None if money else _inferred_note(f, meas)
     what = spec["what"]
     try:
         what = what.format(value=meas, count=f.get("value"),
@@ -577,10 +621,9 @@ def humanise(f):
     if esc == "activity after containment":
         lines = ["🛡🚨 <b>This is still happening after the fix was applied</b>",
                  "<i>Needs attention now — the containment did not hold</i>", "",
-                 f"You marked this contained{(' (' + f['status_note'] + ')') if f.get('status_note') else ''}, "
-                 f"but the same wallet is active again. It was <b>{f.get('value_at_status')}</b> when you "
-                 f"marked it; it is <b>{f.get('value')}</b> now.", "",
-                 f"<b>Measured</b>  {meas}"]
+                 f"You marked this contained{(' (' + _esc(f['status_note']) + ')') if f.get('status_note') else ''}, "
+                 f"but the same wallet is active again. {_grew_words(f)}", "",
+                 f"<b>Measured</b>  {meas}" + (f"  {_normal_for(f, spec)}" if _normal_for(f, spec) else "")]
         if inferred:
             lines += ["", inferred]
         if money:
@@ -598,9 +641,8 @@ def humanise(f):
     if esc == "still growing since you reported it":
         lines = ["📣 <b>Update — the case you reported is still growing</b>",
                  "<i>Worth a look today</i>", "",
-                 f"This was <b>{f.get('value_at_status')}</b> when you reported it. It is now "
-                 f"<b>{f.get('value')}</b>.", "",
-                 f"<b>Measured</b>  {meas}"]
+                 f"{_grew_words(f, verb='reported it')}", "",
+                 f"<b>Measured</b>  {meas}" + (f"  {_normal_for(f, spec)}" if _normal_for(f, spec) else "")]
         if inferred:
             lines += ["", inferred]
         if money:
@@ -613,7 +655,7 @@ def humanise(f):
             lines += ["", f"Wallet  <code>{f['key']}</code>"]
         return "\n".join(lines) + "\n\n" + _footer(f)
 
-    normal = spec.get("normal")
+    normal = _normal_for(f, spec)
     lines = [f"{icon} <b>{spec['title']}</b>", f"<i>{urgency}</i>", "", what, "",
              f"<b>Measured</b>  {meas}" + (f"  {normal}" if normal else "")]
     if inferred:

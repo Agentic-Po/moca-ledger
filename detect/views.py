@@ -1,8 +1,14 @@
 """Matplotlib renderers — one PNG per finding, written into its incident folder.
 
-Charts per the spec: concentration bars with the organic p50/p95 band, burst
-timeline, fan-in tree, watchlist/context table; generic value-vs-threshold bar
-for everything else. Neutral wording; entity keys truncated to 14 chars.
+Concentration bars, burst timeline, fan-in tree, watchlist/context table, and a
+measured-value bar for everything else. Neutral wording; entity keys truncated to
+14 chars.
+
+No chart draws a threshold line, the organic p50-p95 band, or a value-vs-threshold
+pair. Money-bearing alerts exceed Telegram's 1024-character caption limit, so the
+chart is posted as its own message and is the most forwardable object in the
+channel; explain.py strips the same numbers from the text, and a picture of them
+undoes that (council §7).
 """
 import collections
 import matplotlib
@@ -45,7 +51,7 @@ def _concentration(f, ctx):
        - share variant  (window '6h')     : share of equip-sized payouts per creator
        - count variant  (window '60min')  : payout COUNT per creator in the hour
        Rendering a count finding on a share axis makes the flagged bar look
-       below threshold — never do that."""
+       far smaller than it is — never do that."""
     end = f.ts + SLOT
     count_variant = str(getattr(f, "window", "")).startswith("60")
     span = 1 * H if count_variant else 6 * H
@@ -58,26 +64,24 @@ def _concentration(f, ctx):
     fig, ax = plt.subplots(**FIG)
     labels = [w[:12] for w, _ in top]
     colors = ["#c0392b" if w == f.key else "#5b7fa6" for w, _ in top]
+    # No threshold line, no organic p50-p95 band. Every money-bearing alert now
+    # exceeds CAPTION_MAX, so the chart is detached into its own message and becomes
+    # the single most forwardable object in the channel — and one screenshot of a
+    # labelled threshold hands the operator the exact constraint to stay under.
+    # Council §7: keep the plain-English normal in the text, drop the trigger value,
+    # the p95 bullet and the band axis.
     if count_variant:
         ys = [k for _, k in top]
         ax.bar(range(len(top)), ys, color=colors)
-        try: ax.axhline(float(f.threshold), color="#c0392b", ls="--", lw=1, label=f"page threshold ({f.threshold}/60 min)")
-        except (TypeError, ValueError): pass
         ax.set_ylabel("equip-sized payouts / 60 min")
         title = f"payout rate per recipient · hour ending {utc(end)} UTC · n={total}"
     else:
         ys = [k / total for _, k in top]
         ax.bar(range(len(top)), ys, color=colors)
-        org = ctx.baselines.get("daily_creator_rewards_organic", {}).get("top1_share_moca", {})
-        if org:
-            ax.axhspan(org.get("p50", 0), org.get("p95", 0), color="#9acd9a", alpha=0.3, label="organic p50-p95")
-        thr = f.threshold if isinstance(f.threshold, (int, float)) and 0 < float(f.threshold) <= 1 else 0.45
-        ax.axhline(float(thr), color="#c0392b", ls="--", lw=1, label=f"page threshold ({thr:.2f})")
         ax.set_ylabel("share of equip-sized payouts / 6 h")
         title = f"concentration · window ending {utc(end)} UTC · n={total}"
     ax.set_xticks(range(len(top)))
     ax.set_xticklabels(labels, rotation=30, ha="right")
-    ax.legend(fontsize=8)
     _style(ax, title)
     return fig
 
@@ -140,10 +144,7 @@ def _rate(f, ctx):
             tot -= per_slot.get(run.popleft(), 0)
         xs.append((sl - sl_end) / 6)
         ys.append(tot)
-    ax.plot(xs, ys, color="#5b7fa6")
-    if isinstance(f.threshold, (int, float)):
-        ax.axhline(f.threshold, color="#c0392b", ls="--", lw=1, label="threshold")
-        ax.legend(fontsize=8)
+    ax.plot(xs, ys, color="#5b7fa6")           # no threshold line: see _conc above
     ax.set_xlabel("hours before now")
     ax.set_ylabel("rolling count")
     _style(ax, f"{f.signal} rolling rate · ending {utc(f.ts + SLOT)} UTC")
@@ -190,9 +191,10 @@ def _balances(f, ctx):
 
 
 def _generic(f, ctx):
+    """The measured value alone. A value-vs-threshold bar pair IS the threshold,
+    drawn to scale, in the most forwardable object in the channel."""
     fig, ax = plt.subplots(**FIG)
     v = f.value if isinstance(f.value, (int, float)) else 0
-    t = f.threshold if isinstance(f.threshold, (int, float)) else 0
-    ax.bar(["value", "threshold"], [v, t], color=["#c0392b", "#999999"])
+    ax.bar(["measured"], [v], color=["#c0392b"])
     _style(ax, f"{f.signal} · {f.key[:12]} · {utc(f.ts + SLOT)} UTC")
     return fig
