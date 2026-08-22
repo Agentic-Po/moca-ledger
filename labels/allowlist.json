@@ -1,0 +1,78 @@
+{
+ "version": "2026-08-22.2-public",
+ "generated": "2026-08-22",
+ "note": "System/infrastructure addresses are public chain infrastructure. Excluded-creator wallets are salted-hash only (salt in an Actions secret).",
+ "system": [
+  {
+   "address": "0xbd956171f5b50936f0ad1c4db80c022bd2442519",
+   "role": "treasury"
+  },
+  {
+   "address": "0xb15afc65532f8ec4d39db521ad7eb5b9e9ef5acf",
+   "role": "reward_source"
+  },
+  {
+   "address": "0xd85096faec1ac03075667b4c1a1661f5623bf111",
+   "role": "cognition_sink"
+  },
+  {
+   "address": "0x4d3021a52b31ffafde3c46450d02c72807c3a178",
+   "role": "infrastructure"
+  },
+  {
+   "address": "0x1c5ebb794335b72d773df2fd8f80f3d1afbb75dd",
+   "role": "infrastructure"
+  },
+  {
+   "address": "0x2a5eeea4d91042f779ee6014f4f6fd41f375262d",
+   "role": "amm_or_router"
+  },
+  {
+   "address": "0xdc55a0291029665fecff5ca5add0e51dd2964877",
+   "role": "amm_or_router"
+  },
+  {
+   "address": "0x411d2c093e4c2e69bf0d8e94be1bf13dadd879c6",
+   "role": "amm_or_router"
+  },
+  {
+   "address": "0xc8f6b8ba0dc0f175b568b99440b0867f69a29265",
+   "role": "amm_or_router"
+  },
+  {
+   "address": "0xbc1d9760bd6ca468ca9fb5ff2cfbeac35d86c973",
+   "role": "amm_or_router"
+  },
+  {
+   "address": "0xbe96d4964d89c17c2c8c4d230313b8b6f7f6507a",
+   "role": "amm_or_router"
+  },
+  {
+   "address": "0x0000000000000000000000000000000000000000",
+   "role": "infrastructure"
+  }
+ ],
+ "excluded_hashed": [
+  "0c33df317cb02db1",
+  "2652c71362ccfbc7",
+  "44c3dd6ef66a54ed",
+  "46d308cb2ef50aab",
+  "55aef59f98fda9d9",
+  "5a9b61615f87ce49",
+  "7493fceb8b52ffc2",
+  "80fb69ee7ab91668",
+  "a105be7eedeb9c8b",
+  "a8eb58477dc37cec",
+  "ac5959f0eb3da78d",
+  "c0c2c327a6d51383",
+  "c5e50ec2388d4809",
+  "d37bd53fd4108cdf",
+  "dba320e984fb64ea",
+  "e6ffd0d48e897cdd",
+  "e9f9266beeff570b",
+  "f74dcdc8956de7a0",
+  "f7ca27d6798f3e02",
+  "fd880ed88d246c15"
+ ],
+ "hash": "sha256(salt+lower(address))[:16]"
+}

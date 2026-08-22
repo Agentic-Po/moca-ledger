@@ -1,0 +1,253 @@
+{
+ "generated": "2026-08-22",
+ "note": "aggregate percentiles only; entity lists and evidence are private",
+ "baselines": {
+  "equips_per_new_mind": {
+   "organic_minds": 6164,
+   "first_10min": {
+    "n": 6164,
+    "p50": 0.0,
+    "p95": 0.0,
+    "p99": 1.0,
+    "max": 12,
+    "mean": 0.051,
+    "share_ge1": 0.0466,
+    "share_ge5": 0.0003,
+    "share_ge10": 0.0002
+   },
+   "first_24h": {
+    "n": 6164,
+    "p50": 0.0,
+    "p95": 1.0,
+    "p99": 1.0,
+    "max": 20,
+    "mean": 0.092,
+    "share_ge1": 0.0665,
+    "share_ge5": 0.0023,
+    "share_ge10": 0.0003
+   },
+   "ALL_minds_incl_farm_for_contrast": {
+    "n": 6561,
+    "first_10min": {
+     "n": 6561,
+     "p50": 0.0,
+     "p95": 2.0,
+     "p99": 4.0,
+     "max": 13,
+     "mean": 0.41,
+     "share_ge1": 0.2826,
+     "share_ge5": 0.0049,
+     "share_ge10": 0.0002
+    },
+    "first_24h": {
+     "n": 6561,
+     "p50": 0.0,
+     "p95": 3.0,
+     "p99": 4.0,
+     "max": 67,
+     "mean": 0.527,
+     "share_ge1": 0.323,
+     "share_ge5": 0.0096,
+     "share_ge10": 0.0006
+    }
+   }
+  },
+  "equip_to_invoke": {
+   "organic_equip_pairs": 961,
+   "conv_24h": 0.2216,
+   "conv_7d": 0.2435,
+   "conv_ever_to_21aug": 0.257,
+   "pairs_with_invoke_before_equip": 0
+  },
+  "creator_invokes_per_equip_ge20equips": {
+   "n": 8,
+   "p50": 0.514,
+   "p95": 6.769,
+   "p99": 8.333,
+   "max": 8.723577235772357,
+   "mean": 1.907
+  },
+  "mind_to_mind_per_day": {
+   "n": 41,
+   "p50": 0.0,
+   "p95": 6.0,
+   "p99": 8.8,
+   "max": 10,
+   "mean": 1.098,
+   "days": 41,
+   "total": 45,
+   "top_days": [
+    [
+     "2026-08-11",
+     10
+    ],
+    [
+     "2026-07-26",
+     7
+    ],
+    [
+     "2026-08-16",
+     6
+    ],
+    [
+     "2026-08-18",
+     6
+    ],
+    [
+     "2026-07-13",
+     3
+    ]
+   ]
+  },
+  "withdrawals_mind_to_nonmind": {
+   "per_day": {
+    "n": 41,
+    "p50": 0.0,
+    "p95": 2.0,
+    "p99": 42.4,
+    "max": 68,
+    "mean": 2.073
+   },
+   "size_moca": {
+    "n": 85,
+    "p50": 178.58,
+    "p95": 1560.0,
+    "p99": 8627.507,
+    "max": 15617.17,
+    "mean": 562.093
+   },
+   "total_tx": 85,
+   "total_moca": 47778,
+   "distinct_withdrawing_wallets": 78,
+   "active_organic_mind_wallets_in_window": 3691,
+   "share_active_wallets_withdrawing": 0.0211,
+   "median_size_usd_at_0.0083": 1.48,
+   "top_days": [
+    [
+     "2026-07-26",
+     68
+    ],
+    [
+     "2026-08-01",
+     4
+    ],
+    [
+     "2026-07-13",
+     2
+    ],
+    [
+     "2026-07-17",
+     1
+    ],
+    [
+     "2026-07-21",
+     1
+    ]
+   ],
+   "busiest_day_detail": {
+    "day": "2026-07-26",
+    "tx": 68,
+    "moca": 15758,
+    "senders": 67,
+    "dests": [
+     [
+      "0xa4ea74fa48fba93fdb666a595679f46b0ba557de",
+      2
+     ],
+     [
+      "0x544deff45c7ddcf48d0e36f799f0c7b696e4a038",
+      1
+     ],
+     [
+      "0xc3be0928c94fc18f83d89ad0b4384883648d76f1",
+      1
+     ],
+     [
+      "0x22f1828d52841c3de0dd9ce2213e1cece4edd559",
+      1
+     ]
+    ],
+    "sender_created": [
+     [
+      "2026-07-03",
+      66
+     ],
+     [
+      "2026-06-03",
+      2
+     ]
+    ]
+   }
+  },
+  "daily_creator_rewards_organic": {
+   "payout_count": {
+    "n": 41,
+    "p50": 180.0,
+    "p95": 271.0,
+    "p99": 378.6,
+    "max": 445,
+    "mean": 164.268
+   },
+   "distinct_recipients": {
+    "n": 41,
+    "p50": 42.0,
+    "p95": 63.0,
+    "p99": 85.2,
+    "max": 98,
+    "mean": 40.341
+   },
+   "top1_share_moca": {
+    "n": 41,
+    "p50": 0.189,
+    "p95": 0.427,
+    "p99": 0.568,
+    "max": 0.647,
+    "mean": 0.221
+   },
+   "top3_share_moca": {
+    "n": 41,
+    "p50": 0.416,
+    "p95": 0.58,
+    "p99": 0.783,
+    "max": 0.849,
+    "mean": 0.419
+   }
+  },
+  "daily_creator_rewards_ALL_incl_internal_and_farm": {
+   "top1_share": {
+    "n": 41,
+    "p50": 0.213,
+    "p95": 0.632,
+    "p99": 0.694,
+    "max": 0.726,
+    "mean": 0.257
+   },
+   "top3_share": {
+    "n": 41,
+    "p50": 0.537,
+    "p95": 0.742,
+    "p99": 0.818,
+    "max": 0.821,
+    "mean": 0.518
+   }
+  },
+  "daily_treasury_outflow_ledger_all_types": {
+   "tx": {
+    "n": 41,
+    "p50": 527.0,
+    "p95": 2993.0,
+    "p99": 3877.6,
+    "max": 4318,
+    "mean": 898.463
+   },
+   "recipients": {
+    "n": 41,
+    "p50": 148.0,
+    "p95": 272.0,
+    "p99": 468.6,
+    "max": 573,
+    "mean": 151.22
+   }
+  }
+ }
+}

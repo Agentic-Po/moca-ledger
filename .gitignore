@@ -1,0 +1,6 @@
+logs/
+*.tmp
+__pycache__/
+.DS_Store
+detect/cache/
+*.csv

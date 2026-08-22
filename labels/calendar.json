@@ -1,0 +1,60 @@
+{
+ "version": "2026-08-22.1-public",
+ "events": [
+  {
+   "id": "credit-batch-2026-07-16",
+   "start": "2026-07-16T00:00Z",
+   "end": "2026-07-17T00:00Z",
+   "kind": "admin_credit_batch"
+  },
+  {
+   "id": "credit-batch-2026-07-22",
+   "start": "2026-07-22T00:00Z",
+   "end": "2026-07-23T00:00Z",
+   "kind": "admin_credit_batch"
+  },
+  {
+   "id": "credit-batch-2026-08-03",
+   "start": "2026-08-03T03:00Z",
+   "end": "2026-08-03T06:00Z",
+   "kind": "admin_credit_batch"
+  },
+  {
+   "id": "credit-batch-2026-08-06",
+   "start": "2026-08-06T02:00Z",
+   "end": "2026-08-06T05:00Z",
+   "kind": "admin_credit_batch"
+  },
+  {
+   "id": "credit-batch-2026-08-12",
+   "start": "2026-08-12T09:00Z",
+   "end": "2026-08-12T12:00Z",
+   "kind": "admin_credit_batch"
+  },
+  {
+   "id": "credit-batch-2026-08-14",
+   "start": "2026-08-14T09:00Z",
+   "end": "2026-08-14T13:00Z",
+   "kind": "admin_credit_batch"
+  },
+  {
+   "id": "classroom-2026-08-17",
+   "start": "2026-08-17T00:00Z",
+   "end": "2026-08-18T00:00Z",
+   "kind": "event_mode"
+  },
+  {
+   "id": "pause-equip-2026-08-21",
+   "start": "2026-08-21T13:35Z",
+   "end": null,
+   "kind": "reward_pause"
+  },
+  {
+   "id": "pause-invoke-2026-08-21",
+   "start": "2026-08-21T13:51Z",
+   "end": null,
+   "kind": "reward_pause"
+  }
+ ],
+ "note": "campaign / credit-batch / pause windows; notes and human ids are private"
+}
