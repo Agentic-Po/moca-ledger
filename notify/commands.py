@@ -166,6 +166,15 @@ def handle(s, m):
 
     if not text.startswith("/"):
         if not rf:
+            # A person wrote something and expects to be heard. Silence here is how a
+            # reply at 01:32 disappeared with no trace. Always answer.
+            if (m.get("reply_to_message") or {}).get("message_id"):
+                reply("I saw your reply, but I could not match it to a case \u2014 that alert was sent "
+                      "before I could record which case it belonged to.\n\n"
+                      "Send <code>/cases</code> and reply to me with the case id, or reply to a newer alert.", mid)
+            elif any(w in text.lower() for w in ("contained", "reported", "closed", "watching", "fixed", "paused", "done")):
+                reply("I think you are telling me about a case, but I do not know which one. "
+                      "Reply directly to the alert, or send <code>/cases</code> to see the ids.", mid)
             return 0
         low = text.lower()
         # Whole words, in a fixed order. A substring scan is dangerous here:
