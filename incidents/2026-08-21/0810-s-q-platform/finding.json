@@ -1,0 +1,23 @@
+{
+ "signal": "S-Q",
+ "key": "platform",
+ "tier": "page",
+ "value": 104,
+ "threshold": 100,
+ "organic_p95": null,
+ "window": "24h",
+ "ts": 1787299800,
+ "headline": [
+  "104 quest-wallet sends / 24 h",
+  "fresh (<1 h) recipient share 98%"
+ ],
+ "recommended_action": "request reward pause for this recipient and start a review",
+ "owner": "UNASSIGNED",
+ "as_of_block": 50294885,
+ "evidence": null,
+ "view_png": "incidents/2026-08-21/0810-s-q-platform/view.png",
+ "detail": "104/24h fresh 98%",
+ "escalation": "",
+ "id": "4f57013e16",
+ "first_ts": "2026-08-21 08:10"
+}

@@ -1,0 +1,20 @@
+{
+ "signal": "10i",
+ "key": "0xd7c9b4032072069e5b2a7039954b9f9bb43815ad",
+ "tier": "digest",
+ "value": 0.633,
+ "threshold": 0.6,
+ "organic_p95": null,
+ "window": "6h",
+ "ts": 1787341200,
+ "headline": [],
+ "recommended_action": "no action; context only",
+ "owner": "UNASSIGNED",
+ "as_of_block": 50294885,
+ "evidence": null,
+ "view_png": "incidents/2026-08-21/1940-10i-d7c9b403/view.png",
+ "detail": "top1=63% n=128 (all creators)",
+ "escalation": "",
+ "id": "c227a48be2",
+ "first_ts": "2026-08-21 19:40"
+}

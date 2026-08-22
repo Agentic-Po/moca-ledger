@@ -1,0 +1,23 @@
+{
+ "signal": "S-F",
+ "key": "0x9167b008afeeeff32eb6ff041c0a8b9f32d66701",
+ "tier": "notify",
+ "value": 114.9,
+ "threshold": null,
+ "organic_p95": null,
+ "window": "60min",
+ "ts": 1787376000,
+ "headline": [
+  "equip-sized payout during pause, first-ever recipient",
+  "verify type: a $1 card payment has the same on-chain size"
+ ],
+ "recommended_action": "review this entity; add to watch if the pattern repeats",
+ "owner": "UNASSIGNED",
+ "as_of_block": 50294885,
+ "evidence": null,
+ "view_png": "incidents/2026-08-22/0520-s-f-9167b008/view.png",
+ "detail": "equip-sized 115 MOCA, first-ever recipient, verify type",
+ "escalation": "",
+ "id": "453cd8d05f",
+ "first_ts": "2026-08-22 05:20"
+}

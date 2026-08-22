@@ -1,0 +1,23 @@
+{
+ "signal": "11",
+ "key": "0xd7c9b4032072069e5b2a7039954b9f9bb43815ad",
+ "tier": "page",
+ "value": 26,
+ "threshold": 10,
+ "organic_p95": 4,
+ "window": "60s",
+ "ts": 1787320200,
+ "headline": [
+  "26 equip-sized payouts in 60s to one recipient",
+  "burst start 2026-08-21 13:52 UTC"
+ ],
+ "recommended_action": "request reward pause for this recipient and start a review",
+ "owner": "UNASSIGNED",
+ "as_of_block": 50294885,
+ "evidence": null,
+ "view_png": "incidents/2026-08-21/1350-11-d7c9b403/view.png",
+ "detail": "26 in 60s",
+ "escalation": "",
+ "id": "4a681751c1",
+ "first_ts": "2026-08-21 13:50"
+}

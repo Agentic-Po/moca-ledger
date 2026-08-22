@@ -1,0 +1,20 @@
+{
+ "signal": "13",
+ "key": "0xd7c9b4032072069e5b2a7039954b9f9bb43815ad",
+ "tier": "digest",
+ "value": 0.66,
+ "threshold": 0.6,
+ "organic_p95": null,
+ "window": "event",
+ "ts": 1787320200,
+ "headline": [],
+ "recommended_action": "no action; context only",
+ "owner": "UNASSIGNED",
+ "as_of_block": 50294885,
+ "evidence": null,
+ "view_png": "incidents/2026-08-21/1350-13-d7c9b403/view.png",
+ "detail": "30,056 MOCA out, score 0.66",
+ "escalation": "",
+ "id": "48514b969f",
+ "first_ts": "2026-08-21 13:50"
+}

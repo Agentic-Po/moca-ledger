@@ -1,0 +1,23 @@
+{
+ "signal": "composite",
+ "key": "75da410266",
+ "tier": "page",
+ "value": 2,
+ "threshold": 2,
+ "organic_p95": null,
+ "window": "6h",
+ "ts": 1787293200,
+ "headline": [
+  "2 distinct signals on linked entities within 6 h: 11, S-A",
+  "1 linked entities"
+ ],
+ "recommended_action": "request reward pause for this recipient and start a review",
+ "owner": "UNASSIGNED",
+ "as_of_block": 50294885,
+ "evidence": null,
+ "view_png": "incidents/2026-08-21/0620-composite-75da4102/view.png",
+ "detail": "11, S-A",
+ "escalation": "",
+ "id": "7790c484b6",
+ "first_ts": "2026-08-21 06:20"
+}

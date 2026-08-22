@@ -1,0 +1,19 @@
+name: ci
+on:
+  push:    { branches: [main] }
+  pull_request:
+permissions: { contents: read }
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q -r requirements.txt
+      - name: PII gate
+        run: python3 tests/test_pii.py --tree .
+      - name: Detector gate (replay deadlines + benign windows + parity)
+        env: { MINDSET_SALT: "${{ secrets.MINDSET_SALT }}" }
+        run: python3 tests/test_gate.py

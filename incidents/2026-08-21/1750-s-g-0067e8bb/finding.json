@@ -1,0 +1,23 @@
+{
+ "signal": "S-G",
+ "key": "0x0067e8bb0d657322df9211b874b04d5361ae6db5",
+ "tier": "notify",
+ "value": 1170.0,
+ "threshold": null,
+ "organic_p95": null,
+ "window": "24h",
+ "ts": 1787334600,
+ "headline": [
+  "watchlist inflow 1,170 MOCA",
+  "first touch / 24 h; 1,170 MOCA"
+ ],
+ "recommended_action": "review this entity; add to watch if the pattern repeats",
+ "owner": "UNASSIGNED",
+ "as_of_block": 50294885,
+ "evidence": null,
+ "view_png": "incidents/2026-08-21/1750-s-g-0067e8bb/view.png",
+ "detail": "in 1,170 (first touch / 24 h; 1,170 MOCA)",
+ "escalation": "",
+ "id": "16dec8711b",
+ "first_ts": "2026-08-21 17:50"
+}

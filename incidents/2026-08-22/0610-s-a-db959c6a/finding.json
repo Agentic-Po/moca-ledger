@@ -1,0 +1,23 @@
+{
+ "signal": "S-A",
+ "key": "0xdb959c6a9d0cc8023e579292805666a226c1dfde",
+ "tier": "notify",
+ "value": 1104,
+ "threshold": 15,
+ "organic_p95": 2,
+ "window": "24h",
+ "ts": 1787379000,
+ "headline": [
+  "1104 equip-sized payouts / rolling 24 h (threshold 15)",
+  "creator age >=7d"
+ ],
+ "recommended_action": "review this entity; add to watch if the pattern repeats",
+ "owner": "UNASSIGNED",
+ "as_of_block": 50294885,
+ "evidence": null,
+ "view_png": "incidents/2026-08-22/0610-s-a-db959c6a/view.png",
+ "detail": "1104/24h thr=15",
+ "escalation": "",
+ "id": "e48ef9e830",
+ "first_ts": "2026-08-22 06:10"
+}
