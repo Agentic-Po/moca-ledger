@@ -53,6 +53,7 @@ def save_state(s):
 def main():
     global ANCHOR_BLOCK, ANCHOR_TS
     os.makedirs(DATA, exist_ok=True)
+    os.makedirs(os.path.join(HERE, "logs"), exist_ok=True)
     head = int(rpc("eth_blockNumber", []), 16)
     b = rpc("eth_getBlockByNumber", [hex(head), False]); ANCHOR_BLOCK, ANCHOR_TS = head, int(b["timestamp"], 16)
     st = load_state(); nxt = st["next_block"]; target = head - CONFIRM
