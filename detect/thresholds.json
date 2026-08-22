@@ -44,9 +44,9 @@
  "composite_min_signals": 2,
  "composite_window_h": 6,
  "incident_mode_min": 3,
- "incident_mode_note": "more than this many loud (page/notify) findings pending in one run switches notify/telegram.py to incident mode: one loud header, every finding silent beneath it. See the council decision of 2026-08-23.",
+ "incident_mode_note": "more than this many loud (page/notify) findings pending in one run switches notify/telegram.py to incident mode: one loud header, every finding silent beneath it. An incident ends only after six hours with nothing loud (INCIDENT_TTL_S), never on a single quiet run. See the council decision of 2026-08-23.",
  "balance_watch": {
-  "note": "exit-leg balance watch floors (S-X). drop_* = minimum decrease that fires notify, in token units; MENTE uses the MOCA-equivalent floor. deposit_min = any receipt above this at an exchange_deposit address fires notify.",
+  "note": "exit-leg balance watch floors (S-X). drop_* = minimum decrease that fires notify, in token units; MENTE uses the MOCA-equivalent floor. deposit_min = any receipt above this at an exchange_deposit address fires notify. cashout_sound_min = the floor an ARRIVAL must clear before it counts as 'the first cash-out' for incident-mode sounding; deposit_min is dust, and without this floor one dust transfer burns the siren for the whole incident.",
   "drop_moca": 1000,
   "drop_mente": 1000,
   "drop_eth": 0.05,
@@ -54,8 +54,9 @@
   "drop_usdc": 100,
   "deposit_min": 1e-06,
   "pace_s": 1.0,
-  "budget_s": 90
+  "budget_s": 90,
+  "cashout_sound_min": 1000
  },
- "escalation_owner": "Po (interim) — @Po_Chu on Telegram",
+ "escalation_owner": "Po (interim) \u2014 @Po_Chu on Telegram",
  "escalation_note": "Interim owner until platform names someone who can pause a creator's reward. Replace both fields together."
 }

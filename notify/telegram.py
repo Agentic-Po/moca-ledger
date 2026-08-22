@@ -34,8 +34,25 @@ def _post(method, data=None, files=None):
         try:
             return json.load(urllib.request.urlopen(req, timeout=30))
         except urllib.error.HTTPError as e:
+            # An exception raised INSIDE this handler is not caught by the sibling
+            # `except Exception` below — it escapes _post, escapes send(), and
+            # escapes send_pending() after pending_send was already cleared, which
+            # loses the alert permanently. Telegram is not always behind Telegram:
+            # an edge proxy rate-limiting a burst answers 429 with HTML.
+            body = b""
+            try:
+                body = e.read()
+            except Exception:
+                pass
             if e.code == 429:
-                time.sleep(int(json.loads(e.read()).get("parameters", {}).get("retry_after", 5)))
+                wait = 5
+                try:
+                    wait = int(json.loads(body).get("parameters", {}).get("retry_after", 5))
+                except Exception:
+                    print("telegram: 429 with an unparseable body — backing off 5s", file=sys.stderr)
+                if attempt == 2:
+                    return {"ok": False, "error": "http 429 (rate limited)"}
+                time.sleep(min(max(wait, 1), 30))
                 continue
             return {"ok": False, "error": f"http {e.code}"}
         except Exception as ex:
@@ -73,6 +90,13 @@ def send(text, photo=None, silent=False):
         p = _post("sendPhoto", d, {"photo": (pathlib.Path(photo).name, pathlib.Path(photo).read_bytes())})
         if not p.get("ok"):
             print(f"chart not delivered for the message above: {p.get('error')}", file=sys.stderr)
+        else:
+            # The chart is now the most visually prominent object on the page, so it
+            # is what people reply to. Hand its id back so the caller can map it to
+            # the same case; otherwise the reply gets "I cannot tell which case".
+            pid = (p.get("result") or {}).get("message_id")
+            if pid:
+                r.setdefault("also_message_ids", []).append(pid)
     return r
 
 ICON = {"page": "🚨", "notify": "🟠", "digest": "📋", "health": "⏳"}
@@ -135,8 +159,13 @@ def save_state(s):
     STATE.write_text(json.dumps(s, indent=1))
 
 def _suppressed(f, s):
-    """An acked, snoozed or muted finding must never re-send — otherwise every run
-    re-pages what the human already handled."""
+    """Why this finding is not going out right now, or None.
+
+    "acked" is permanent — a person decided it. "snoozed" and "muted" are temporary,
+    and send_pending() therefore HOLDS those findings (leaves pending_send True)
+    rather than clearing them; clearing turned "quiet for 6 hours" into "never sent"
+    with no message, which is the one thing §6.6 forbids. Signal-wide /mute is gone
+    (council §5); this still honours any mute left in the state file."""
     if f.get("ack_by") or f.get("ack_role"): return "acked"
     sn = f.get("snooze_until")
     if sn and dt.datetime.now(dt.UTC).isoformat() < str(sn): return "snoozed"
@@ -180,6 +209,7 @@ def _chunks(text, limit):
 # GitHub Contents API and stops being readable above 1 MB).
 INCIDENT_TTL_S = 6 * 3600          # six quiet hours ends an incident
 INCIDENT_SHOW = 6                  # same cap the loud path already applies
+CASHOUT_KEEP  = 20                 # cash-out destinations remembered per incident
 
 
 def _thresholds():
@@ -187,6 +217,25 @@ def _thresholds():
         return json.loads((ROOT / "detect" / "thresholds.json").read_text())
     except Exception:
         return {}
+
+
+def _hedge():
+    """The one wording every money figure in this channel carries.
+
+    render() degrades to a terse fallback when explain.py breaks; the header had
+    no such net, so a broken explain.py killed send_pending before a single alert
+    went out — and only ever during an incident."""
+    try:
+        from explain import HEDGE
+        return HEDGE
+    except Exception:
+        pass
+    try:
+        from notify.explain import HEDGE
+        return HEDGE
+    except Exception as ex:
+        print(f"explain.HEDGE unavailable ({ex!r}) — using the literal", file=sys.stderr)
+        return "payment type inferred from size on-chain — unconfirmed"
 
 
 def _wallet_of(f):
@@ -202,19 +251,72 @@ def _short(key):
     return (k[:10] + "…") if k.lower().startswith("0x") and len(k) > 12 else (k or "?")
 
 
-def _is_cashout(f):
-    """A first move into an exchange deposit address — the moment a freeze request
-    has the best chance of working. balance_watch puts the role in the headline."""
-    return str(f.get("signal")) == "S-X" and any(
-        "exchange_deposit" in str(h) for h in (f.get("headline") or []))
+def _cashout_min():
+    t = _thresholds().get("balance_watch") or {}
+    try:
+        return float(t.get("cashout_sound_min", 1000))
+    except (TypeError, ValueError):
+        return 1000.0
+
+
+def _cashout_addr(f):
+    """The exchange-deposit address a MATERIAL amount just arrived at, or None.
+
+    This is the alert with a real freeze window, so the conditions are the ones a
+    dust transfer must not be able to satisfy:
+      * S-X carrying role exchange_deposit (balance_watch puts it in the headline);
+      * an arrival, not a departure — `value` is the signed balance delta, and a
+        watched wallet emptying INTO an exchange is not the same event as one
+        draining out of it;
+      * above cashout_sound_min. `deposit_min` is 1e-06, so without a floor one
+        dust deposit is "the first cash-out" and the real one arrives silent.
+    The address is returned rather than a bool so the siren is per destination:
+    burning it once must not disarm it for every other exchange for hours."""
+    if str(f.get("signal")) != "S-X":
+        return None
+    if not any("exchange_deposit" in str(h) for h in (f.get("headline") or [])):
+        return None
+    try:
+        delta = float(f.get("value"))
+    except (TypeError, ValueError):
+        return None
+    if delta < _cashout_min():
+        return None
+    return _wallet_of(f) or "?"
+
+
+def _moca(f):
+    try:
+        return max(0.0, float(f.get("moca_since")))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _must_hear(f, inc):
+    """The two things a person must hear even mid-incident, whatever their tier.
+
+    These reserve a slot in the batch. Tier-first ordering alone starved the one
+    alert with a real freeze window: S-X is emitted at `notify`, so while six page
+    findings were pending — which IS a burst — a cash-out never entered the batch
+    and the exception the header promises was unreachable."""
+    if f.get("escalation") == "activity after containment" or f.get("status") == "contained":
+        return "a case marked contained is active again"
+    addr = _cashout_addr(f)
+    if addr and addr not in (inc.get("cashouts") or []):
+        return "first cash-out to this destination in this incident"
+    return None
 
 
 def _sound_reason(f, inc):
     """Why this finding is allowed to make a sound inside an incident. None = silent."""
-    if f.get("escalation") == "activity after containment" or f.get("status") == "contained":
-        return "a case marked contained is active again"
-    if _is_cashout(f) and not inc.get("cashout"):
-        return "first cash-out destination in this incident"
+    must = _must_hear(f, inc)
+    if must:
+        return must
+    # Size, not just novelty. Signal classes are cheap to trip on purpose; a total
+    # larger than anything this incident has already sounded for is not.
+    t = _moca(f)
+    if t > 0 and t >= 2 * float(inc.get("max_moca") or 0):
+        return "the largest payout total this incident has seen"
     sig = str(f.get("signal") or "?")
     if sig not in (inc.get("classes") or []):
         return f"first {sig} alert in this incident"
@@ -228,10 +330,7 @@ def _money_totals(findings):
     same money twice. Largest total per wallet wins."""
     per = {}
     for f in findings:
-        try:
-            t = float(f.get("moca_since"))
-        except (TypeError, ValueError):
-            continue
+        t = _moca(f)
         if t <= 0:
             continue
         try:
@@ -244,55 +343,84 @@ def _money_totals(findings):
     return sum(v[0] for v in per.values()), sum(v[1] for v in per.values()), per
 
 
-def _incident_state(s, n_loud, now):
-    """(inc, on, doubled). Opens, carries or expires the one incident object."""
+def _incident_state(s, n_loud, arrivals, now):
+    """(inc, on, doubled). Opens, carries or expires the one incident object.
+
+    An incident ends on the TTL — six hours with nothing loud — not on the first
+    quiet run. A run with nothing pending is routine mid-burst (findings only
+    re-fire when they grow), and ending there un-muted the channel and re-armed
+    every signal class to ring again as "first in this incident"."""
     thr_min = int(_thresholds().get("incident_mode_min", 3) or 3)
     inc = s.get("incident") or {}
-    if inc and now - float(inc.get("last_ts") or 0) > INCIDENT_TTL_S:
+    expired = bool(inc) and now - float(inc.get("last_ts") or 0) > INCIDENT_TTL_S
+    if expired:
         inc = {}
-    prev = int(s.get("loud_prev") or 0)
-    doubled = prev > 0 and n_loud >= 2 * prev
-    on = n_loud > thr_min or (bool(inc) and n_loud > 0)
+    prev = int(s.get("arrivals_prev") or 0)
+    doubled = prev > 0 and arrivals >= 2 * prev
+    on = n_loud > thr_min or bool(inc)
     if on and not inc:
         inc = {"started": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
-               "runs": 0, "classes": [], "cashout": False}
+               "runs": 0, "classes": [], "cashouts": [], "max_moca": 0.0, "last_ts": now}
     return inc, on, doubled
 
 
-def _incident_header(loud, n_shown, new_since, prev_loud, doubled, last_run):
+def _since_words(started):
+    """'3 h 20 min' since the incident opened, for the header's money window."""
+    try:
+        t0 = dt.datetime.fromisoformat(str(started))
+        if t0.tzinfo is None:
+            t0 = t0.replace(tzinfo=dt.UTC)
+        mins = max(0, int((dt.datetime.now(dt.UTC) - t0).total_seconds() // 60))
+    except Exception:
+        return None, None
+    if mins < 90:
+        return f"{mins} min", mins / 60.0
+    return f"{mins // 60} h {mins % 60:02d} min", mins / 60.0
+
+
+def _incident_header(loud, batch, inc, arrivals, arrivals_prev, held_prev, doubled):
     """The single loud message. Counts, money, top wallets, and the limits of all
     of it — a reader who only ever sees this message must not be misled by it."""
-    try:
-        from explain import HEDGE
-    except ImportError:
-        from notify.explain import HEDGE
+    HEDGE = _hedge()
     total, rate, per = _money_totals(loud)
-    L = [f"🚨 <b>Incident mode — {len(loud)} alert(s) in this run</b>",
-         "<i>" + (f"all {new_since} are new" if new_since == len(loud) else
-                   f"{new_since} new since the previous run")
-         + (f", last run {str(last_run)[11:16]} UTC" if last_run else "") + "</i>", ""]
+    started = inc.get("started")
+    since, hours = _since_words(started)
+    n_shown = len(batch)
+    tiers = {}
+    for f in loud:
+        tiers[f.get("tier") or "?"] = tiers.get(f.get("tier") or "?", 0) + 1
+    tier_mix = ", ".join(f"{v} {k}" for k, v in sorted(tiers.items()))
+
+    L = [f"🚨 <b>Incident mode — {arrivals} new alert(s) this run</b>",
+         "<i>" + f"{len(loud)} waiting in total ({tier_mix})"
+         + (f"; {held_prev} carried over from earlier runs" if held_prev > 0 else "")
+         + (f" · started {str(started)[11:16]} UTC, {since} ago" if since else "") + "</i>", ""]
 
     if total > 0:
         usd_note = "price unavailable"
-        money = f"~{total:,.0f} MOCA"
+        rd = None
         try:
             sys.path.insert(0, str(ROOT / "detect"))
             import price
             v, usd_note = price.usd(total)
             d = price.fmt_usd(v)
-            if d:
-                money += f" (~{d})"
             rd = price.fmt_usd(price.usd(rate)[0]) if rate > 0 else None
         except Exception:
-            rd = None
+            d = None
+        money = f"~{total:,.0f} MOCA" + (f" (~{d})" if d else "")
         money += f" across {len(per)} wallet(s)"
         if rate > 0:
-            money += f", about {rd}/h" if rd else f", about {rate:,.0f} MOCA/h"
-        L += [f"<b>Money</b>  {money}", f"<i>{HEDGE} · {usd_note}</i>", ""]
+            money += f", about {rate:,.0f} MOCA/h" + (f" (~{rd}/h)" if rd else "")
+        L += [f"<b>Money</b>  {money}",
+              "<i>Treasury payouts to these wallets only — money moving between wallets, "
+              "or into a collector nobody pays from the Treasury, is NOT in this figure. "
+              "Each wallet is counted from when its own alert first fired, so this is not "
+              f"one clean window. {HEDGE} · {usd_note}.</i>", ""]
 
     top = sorted(per.items(), key=lambda kv: -kv[1][0])[:3]
     if top:
-        L += ["<b>Top</b>  " + " · ".join(f"<code>{_short(k)}</code> ~{v[0]:,.0f} MOCA" for k, v in top), ""]
+        L += ["<b>Top by Treasury payouts</b>  "
+              + " · ".join(f"<code>{_short(k)}</code> ~{v[0]:,.0f} MOCA" for k, v in top), ""]
     else:
         seen, names = set(), []
         for f in sorted(loud, key=lambda x: 0 if x.get("tier") == "page" else 1):
@@ -303,21 +431,27 @@ def _incident_header(loud, n_shown, new_since, prev_loud, doubled, last_run):
             if len(names) == 3:
                 break
         if names:
-            L += ["<b>Top</b>  " + " · ".join(names) + "  <i>(no payout total for these — their value is a share, not an amount)</i>", ""]
+            L += ["<b>Most active</b>  " + " · ".join(names)
+                  + "  <i>(no Treasury-payout total for these: what they measure is a share "
+                    "or a count, and money that did not come from the Treasury is not "
+                    "totalled here — it can still be large)</i>", ""]
 
     if doubled:
-        L += [f"<b>Volume</b>  {len(loud)} loud alert(s) this run against {prev_loud} last run — "
-              f"it has at least doubled.", ""]
+        L += [f"<b>Volume</b>  {arrivals} new alert(s) this run against {arrivals_prev} "
+              f"last run — arrivals have at least doubled.", ""]
 
     held = len(loud) - n_shown
+    sounding = [f for f in batch if _sound_reason(f, inc)]
     L += [f"Showing {n_shown} of {len(loud)} below"
-          + (f"; {held} held, they send in later runs." if held > 0 else "."),
-          "The alerts below are <b>silent</b> — this message is the only ping. Sound is kept for: "
-          "a signal type not yet seen in this incident, a first cash-out destination, a case you "
-          "marked contained firing again, and the volume doubling.", "",
-          "<b>Not covered</b>  swaps inside a wallet, anything that leaves Base, anything off-chain, "
-          "and who is behind a wallet. Balances are polled, not streamed, so a move can be up to a "
-          "run old. Nothing here has been paused or blocked — this bot only informs.", "",
+          + (f"; {held} held — they send in later runs, newest last." if held > 0 else "."),
+          "The alerts below are <b>silent</b> unless marked otherwise — this message is the "
+          "ping. Sound is kept for: a signal type not yet seen in this incident, a first "
+          "cash-out to a destination, a payout total bigger than any so far, and a case you "
+          "marked contained firing again."
+          + (f" {len(sounding)} below will sound." if sounding else ""), "",
+          "<b>This does not see everything.</b> Some ways of moving value produce no alert at "
+          "all, and what is shown can be several minutes behind. Silence here is not an "
+          "all-clear. Nothing has been paused or blocked — this bot only informs.", "",
           "Reply to any alert below with <b>reported</b> · <b>contained</b> · <b>watching</b> · "
           "<b>closed</b>. Replying to <i>this</i> message will not match a case."]
     return "\n".join(L)
@@ -326,52 +460,90 @@ def _incident_header(loud, n_shown, new_since, prev_loud, doubled, last_run):
 def send_pending():
     """Send findings marked pending in alerts/state.json (written by detect/run.py)."""
     s = load_state()
-    for f in s.get("open", {}).values():                       # clear suppressed ones
-        if f.get("pending_send") and _suppressed(f, s):
-            f["pending_send"] = False; f["suppressed"] = _suppressed(f, s)
-    pending = [f for f in s.get("open", {}).values() if f.get("pending_send")]
+    for f in s.get("open", {}).values():
+        if not f.get("pending_send"):
+            continue
+        why = _suppressed(f, s)
+        if why == "acked":
+            # A person handled it. That is permanent by their decision, not ours.
+            f["pending_send"] = False; f["suppressed"] = why
+        elif why:
+            # Snoozed. HELD, not dropped: pending_send stays True so it sends when
+            # the snooze expires. Clearing it turned "quiet for 6 h" into "never"
+            # and violated the rule that no finding is dropped without saying so.
+            f["suppressed"] = why
+    pending = [f for f in s.get("open", {}).values()
+               if f.get("pending_send") and not _suppressed(f, s)]
     digest = [f for f in pending if f.get("tier") == "digest"]
     loud = [f for f in pending if f.get("tier") != "digest"]
 
-    # ---- incident bookkeeping runs even on an empty slot, so an incident can end
+    # ---- arrivals vs backlog. len(loud) is the QUEUE; the number a reader uses to
+    # judge scale must be what turned up this run, or a draining queue reads as an
+    # accelerating attack and a real slowdown is invisible.
+    held_prev = int(s.get("loud_held") or 0)
+    arrivals = max(0, len(loud) - held_prev)
+    arrivals_prev = int(s.get("arrivals_prev") or 0)
+
     now = time.time()
-    inc, incident_on, doubled = _incident_state(s, len(loud), now)
-    prev_loud, last_run = int(s.get("loud_prev") or 0), s.get("last_run_ts")
+    inc, incident_on, doubled = _incident_state(s, len(loud), arrivals, now)
     if not incident_on and s.get("incident"):
-        s.pop("incident", None)
-        print("incident: over (no loud findings this run)")
+        prev_inc = s.pop("incident")
+        print("incident: over (six hours with nothing loud)")
+        send("🔕 <b>Incident mode off.</b> Alerts are loud again.\n"
+             "<i>This is not an all-clear — only a person says that. It means six hours "
+             "passed with nothing new loud enough to alert on. Send <code>/cases</code> "
+             "for what is still open.</i>", silent=True)
+
+    # ---- anything the state layer dropped must be SAID, not only logged (§6.6)
+    rn = s.get("retired_notice")
+    if rn:
+        s.pop("retired_notice", None); save_state(s)
+        send(f"⚠️ <b>{rn.get('unacked', 0)} unacknowledged case(s) were aged out of my memory.</b>\n"
+             f"The case list is at its size limit, so the oldest {rn.get('total', 0)} finding(s) "
+             f"were retired to keep the detector able to restore its state at all. They are gone "
+             f"from <code>/cases</code> and cannot be replied to. The chain data behind them is "
+             f"still in the repo.", silent=False)
 
     if not pending:
-        s["loud_prev"] = 0; s["last_run_ts"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+        s["loud_held"] = 0
+        s["arrivals_prev"] = arrivals
+        if incident_on:
+            s["incident"] = inc          # carried by the TTL, not by this run being busy
+        s["last_run_ts"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
         save_state(s)
         print("nothing pending"); return 0
 
-    batch = sorted(loud, key=lambda x: 0 if x.get("tier") == "page" else 1)[:INCIDENT_SHOW]
+    # ---- what gets a slot. Tier-first alone starved the one alert with a real
+    # freeze window: S-X is `notify`, so during a burst (>= 6 pages pending, which
+    # IS the definition of a burst) a cash-out never entered the batch and the
+    # sound exception the header promises was unreachable. Must-sound findings take
+    # their slot first, whatever their tier. first_ts breaks ties so the order does
+    # not silently flip when prune() rewrites the key order of `open`.
+    def _rank(f):
+        must = 0 if (incident_on and _must_hear(f, inc)) else 1
+        return (must, 0 if f.get("tier") == "page" else 1, str(f.get("first_ts") or ""))
+    batch = sorted(loud, key=_rank)[:INCIDENT_SHOW]
 
     # ---- the one loud message. If it does NOT deliver, the findings below stay
     # loud: silencing them behind a header nobody received would mute the run.
     header_ok = False
     if incident_on and batch:
-        new_since = sum(1 for f in loud if not f.get("last_sent"))
-        header = _incident_header(loud, len(batch), new_since, prev_loud, doubled, last_run)
+        header = _incident_header(loud, batch, inc, arrivals, arrivals_prev, held_prev, doubled)
         s["incident"] = inc; save_state(s)               # commit intent BEFORE sending
-        r = None
+        header_ok = True
+        err = None
         for i, chunk in enumerate(_chunks(header, 3800)):
             r = send(chunk, silent=bool(i))
-        header_ok = bool((r or {}).get("ok"))
-        inc["header_ok"] = header_ok
-        inc["header_error"] = None if header_ok else str((r or {}).get("error"))[:80]
+            if not r.get("ok"):                          # EVERY chunk, not just the last:
+                header_ok = False                        # chunk 1 carries the counts and the
+                err = str(r.get("error"))[:80]           # money, and a lost chunk 1 with a
+        inc["header_ok"] = header_ok                     # delivered chunk 2 would mute the run
+        inc["header_error"] = err
         save_state(s)
-        print(f"incident: header ok={header_ok} loud={len(loud)} shown={len(batch)} doubled={doubled}")
+        print(f"incident: header ok={header_ok} arrivals={arrivals} queue={len(loud)} "
+              f"shown={len(batch)} doubled={doubled}")
         if not header_ok:
             print("incident: header undelivered — findings below stay loud")
-        if header_ok and not inc.get("runs"):
-            # Opening run: the header above announces this whole set, so none of
-            # these classes is "a signal type not seen this incident" — otherwise
-            # the first run of an incident is exactly as loud as no incident mode.
-            # A contained case re-firing and a first cash-out still ring; those
-            # are separate rules and neither is covered by the header.
-            inc["classes"] = sorted({str(f.get("signal") or "?") for f in batch})
 
     for f in batch:
         reason = _sound_reason(f, inc) if (incident_on and header_ok) else None
@@ -382,34 +554,61 @@ def send_pending():
         body = render(f)
         if reason:
             body += f"\n<i>🔔 Sounding despite incident mode: {reason}.</i>"
+        elif silent:
+            # A silenced page renders identically to a live one, and a screenshot of
+            # it forwards as a live page. Say which it is.
+            body += ("\n<i>🔕 Sent silently under incident mode — the header above is this "
+                     "run's ping.</i>")
         r = send(body, photo=f.get("view_png"), silent=silent)
         f["send_ok"] = bool(r.get("ok")); f["send_error"] = None if r.get("ok") else str(r.get("error"))[:80]
         mid = (r.get("result") or {}).get("message_id")
         if mid:
             f["tg_message_id"] = mid
             s.setdefault("by_message", {})[str(mid)] = f.get("id")   # reply -> case lookup
+        for extra in (r.get("also_message_ids") or []):              # the detached chart
+            s.setdefault("by_message", {})[str(extra)] = f.get("id")
         if incident_on and r.get("ok"):
             sig = str(f.get("signal") or "?")
             if sig not in (inc.get("classes") or []):
                 inc.setdefault("classes", []).append(sig)
-            if _is_cashout(f):
-                inc["cashout"] = True
+            addr = _cashout_addr(f)
+            if addr:
+                co = inc.setdefault("cashouts", [])
+                if addr not in co:
+                    co.append(addr)
+                    del co[:-CASHOUT_KEEP]               # bounded: one incident object, ~430 findings
+            inc["max_moca"] = max(float(inc.get("max_moca") or 0), _moca(f))
         save_state(s)
         print(f["tier"], f.get("signal"), "->", r.get("ok"), "silent" if silent else "loud")
 
     if incident_on:
         inc["runs"] = int(inc.get("runs") or 0) + 1
-        inc["last_ts"] = now
+        if loud:
+            inc["last_ts"] = now          # the TTL measures QUIET, so only loud runs refresh it
         s["incident"] = inc
-    s["loud_prev"] = len(loud)
+    still_pending = [f for f in s.get("open", {}).values()
+                     if f.get("pending_send") and f.get("tier") != "digest" and not _suppressed(f, s)]
+    s["loud_held"] = len(still_pending)
+    s["arrivals_prev"] = arrivals
     s["last_run_ts"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     save_state(s)
-    failed = [f for f in s.get("open", {}).values() if f.get("send_ok") is False]
-    if failed and not s.get("send_failure_alarmed"):
+
+    # ---- the send-failure alarm reports THIS run. Keyed on every finding ever
+    # marked send_ok False it latched forever: a failed send leaves pending_send
+    # cleared, so it is never retried, so send_ok stays False, so the flag never
+    # cleared and no later failure was ever announced.
+    failed_now = [f for f in batch if f.get("send_ok") is False]
+    if failed_now and not s.get("send_failure_alarmed"):
         s["send_failure_alarmed"] = True; save_state(s)
-        send(f"🔴 <b>{len(failed)} alert(s) failed to send</b> — check the run log; findings are in the repo index", silent=False)
-    elif not failed and s.get("send_failure_alarmed"):
+        a = send(f"🔴 <b>{len(failed_now)} alert(s) failed to send this run</b> — check the run log; "
+                 f"the findings are in the repo index", silent=False)
+        if not a.get("ok"):
+            print(f"telegram: the send-failure alarm ITSELF failed ({a.get('error')})", file=sys.stderr)
+            s["send_failure_alarmed"] = False          # so the next failure still tries
+            save_state(s)
+    elif not failed_now and s.get("send_failure_alarmed"):
         s["send_failure_alarmed"] = False; save_state(s)
+
     if digest:
         for f in digest: f["pending_send"] = False; f["last_sent"] = dt.datetime.now(dt.UTC).isoformat()
         save_state(s)
@@ -418,10 +617,12 @@ def send_pending():
         except ImportError:
             from notify.explain import digest as fmt_digest
         body = fmt_digest(digest)
-        r = None
+        ok = True
         for chunk in _chunks(body, 3800):        # never truncate mid-tag: HTML would 400
             r = send(chunk, silent=True)
-        if not (r or {}).get("ok"):
+            if not r.get("ok"):                  # every chunk, not just the last
+                ok = False
+        if not ok:
             for f in digest:                     # not delivered -> keep it pending
                 f["pending_send"] = True
             print("digest: send failed, left pending")
