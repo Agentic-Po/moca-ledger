@@ -1,0 +1,71 @@
+name: crawl-detect-notify
+
+on:
+  workflow_dispatch:          # primary: external pinger every 10 min
+  schedule:
+    - cron: "23,53 * * * *"   # backup only (GitHub cron jitter measured p50 +31 min)
+
+permissions:
+  contents: write
+
+concurrency:
+  group: crawl
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+
+      - name: Install deps
+        run: pip install -q -r requirements.txt
+
+      - name: Crawl to tip
+        id: crawl
+        run: python3 crawl.py 2>&1 | tail -5
+
+      - name: Detect
+        id: detect
+        if: hashFiles('detect/run.py') != ''
+        env:
+          MINDSET_SALT: ${{ secrets.MINDSET_SALT }}
+        run: python3 detect/run.py --quiet
+
+      - name: PII gate
+        run: python3 tests/test_pii.py --tree .
+
+      - name: Commit state
+        run: |
+          git config user.name  "moca-ledger-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A data state.json heartbeat.json alerts incidents detect/mindset.json 2>/dev/null || true
+          git diff --cached --quiet || git commit -q -m "crawl $(date -u +'%Y-%m-%d %H:%M') UTC"
+          git pull --rebase -q origin main || true
+          git push -q origin main || true
+
+      - name: Notify (page/notify/digest)
+        if: hashFiles('notify/telegram.py') != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_ACK_USER_IDS: ${{ secrets.TELEGRAM_ACK_USER_IDS }}
+        run: python3 notify/telegram.py --send-pending
+
+      - name: Heartbeat ping (success only)
+        if: success()
+        env: { HC_PING_URL: "${{ secrets.HC_PING_URL }}" }
+        run: curl -fsS -m 10 --retry 2 "$HC_PING_URL" > /dev/null && echo pinged
+
+      - name: Failure notice (deduped)
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 notify/telegram.py --failure "$RUN_URL" || true

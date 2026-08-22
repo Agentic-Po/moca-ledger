@@ -11,7 +11,8 @@ Timestamps: Base produces a block every 2 s deterministically -> ts = anchor_ts 
 import json, os, sys, time, urllib.request, datetime as dt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-RPCS = ["https://mainnet.base.org"]
+RPCS = [u for u in (os.environ.get("BASE_RPCS") or
+        "https://mainnet.base.org,https://base.publicnode.com,https://base-rpc.publicnode.com,https://1rpc.io/base,https://base.drpc.org").split(",") if u.strip()]
 TOK  = "0x2b11834ed1feaed4b4b3a86a6f571315e25a884d"   # MOCA on Base
 TOPIC= "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 START_BLOCK = int(os.environ.get("START_BLOCK", "48270000"))   # ~2026-07-06 UTC, buffer before first MOCA cognition flows (Jul 11)
