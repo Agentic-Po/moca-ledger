@@ -873,11 +873,42 @@ def _digest_block(items, sig):
     """One signal's lines inside the digest."""
     title, tmpl = DIGEST_LINE.get(sig, (SIGNALS.get(sig, FALLBACK)["title"], "{n} event(s)"))
     out = [f"<b>{title}</b>", f"   {tmpl.format(n=len(items))}"]
-    biggest = max(items, key=lambda x: len(str(x.get("detail") or "")))
+    # "one of them", not "the largest": measured() renders a different quantity per
+    # signal, so a superlative label would be a claim this line cannot back. Ranked on
+    # the detector's own measurement — the old max(len(str(detail))) meant the LONGEST
+    # debug string won, so which finding a reader is shown depended on how many digits
+    # and commas a number happened to print with (council section 5).
+    biggest = max(items, key=_extremity)
     if biggest.get("detail"):
-        out.append(f"   e.g. {measured(biggest)}")
+        out.append(f"   one of them: {measured(biggest)}")
     out.append("")
     return out
+
+
+def _extremity(f):
+    """How far past its own normal one finding sits — the digest's example picker.
+
+    The example used to be `max(items, key=len(str(detail)))`: the LONGEST debug
+    string won, so which finding a reader is shown depended on how many digits and
+    commas a number happened to print with, and adding a word to a detector's
+    `detail` silently changed it (council §5). Rank on the detector's own
+    measurement instead — value against its threshold where there is one, absolute
+    value where there is not (a balance that DROPPED moved as far as one that rose),
+    most recent as the tie-break — so the pick is deterministic and survives a
+    formatting change."""
+    try:
+        v = float(f.get("value"))
+    except (TypeError, ValueError):
+        v = 0.0
+    try:
+        thr = float(f.get("threshold"))
+    except (TypeError, ValueError):
+        thr = 0.0
+    try:
+        ts = float(f.get("ts") or 0)
+    except (TypeError, ValueError):
+        ts = 0.0
+    return (v / thr if thr > 0 else 0.0, abs(v), ts)
 
 
 def digest(findings):
@@ -907,9 +938,9 @@ def digest(findings):
             would = str(items[0].get("shadow_of") or "alert")
             lines += _digest_block(items, sig)[:2]
             lines.append(f"   would have been a <b>{would}</b> if this check were live")
-            biggest = max(items, key=lambda x: len(str(x.get("detail") or "")))
+            biggest = max(items, key=_extremity)
             if biggest.get("detail"):
-                lines.append(f"   e.g. {measured(biggest)}")
+                lines.append(f"   one of them: {measured(biggest)}")
             lines.append("")
     if plain:
         groups = collections.OrderedDict()

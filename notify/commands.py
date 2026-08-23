@@ -2,8 +2,13 @@
 """Telegram command handler — runs once per slot inside the workflow.
 
 Reads new updates with getUpdates (offset persisted in alerts/state.json), applies
-/ack /snooze /mute /status /help, and replies in-thread. Privacy mode may stay ON:
+the case verbs (/reported /contained /watching /close /reopen), /snooze (also spelled
+/quiet), /cases, /status and /help, and replies in-thread. Privacy mode may stay ON:
 commands are always delivered to bots.
+
+/ack and /mute are RETIRED verbs (council §5) that still ANSWER. Retiring a verb
+cannot mean deleting the branch: somebody types it from muscle memory at 03:00, and
+a command that reaches no branch falls off the end of handle() into silence.
 
 Only user ids listed in TELEGRAM_ACK_USER_IDS may change state.
 """
@@ -17,6 +22,11 @@ try:                              # the durable message ledger; see notify/msglo
     import msglog
 except ImportError:
     from notify import msglog
+
+try:                              # only for its two degradation thresholds
+    from notify import watchdog    # the package form first: a same-named PyPI
+except ImportError:               # package can never satisfy it, and a shadowed
+    import watchdog               # module would silently change the thresholds
 
 def _cfg(env, fname):
     return os.environ.get(env) or ((HOME / fname).read_text().strip() if (HOME / fname).exists() else "")
@@ -324,6 +334,32 @@ def status_text(s):
                       f"minutes, sometimes up to an hour. Silence is not an all-clear.</i>"]
         except Exception:
             L += ["", f"<i>Last checked {run}.</i>"]
+    # What I might be MISSING. Without this, /status reads as an all-clear while the
+    # detector is blind: "I last looked at the chain 8 min ago" is true and reassuring
+    # even when the address set is two days old and every account created since then
+    # looks like a stranger. Only a person gives an all-clear (§6.3). The thresholds
+    # come from watchdog.py, which already announces both of these to this same group,
+    # so this repeats what the channel has been told rather than disclosing anything
+    # new — which is why it lives here and not behind a /debug command (§7 is Po's call).
+    blind = []
+    try:
+        age = float(hb.get("mindset_age_h") or 0)
+        if age > watchdog.MINDSET_STALE_H:
+            blind.append(f"my list of platform addresses is {age:.0f} h old, so accounts made "
+                         f"since then look like strangers to me")
+    except (TypeError, ValueError):
+        pass
+    try:
+        behind = float(hb.get("lag_blocks") or 0)
+        if behind > watchdog.LAG_BLOCKS_MAX:
+            # Base blocks are a fixed 2 s, so blocks convert straight to minutes.
+            blind.append(f"I am about {behind * 2 / 60:.0f} min behind the chain, so the newest "
+                         f"transfers are not in anything above")
+    except (TypeError, ValueError):
+        pass
+    if blind:
+        L += ["", "⚠️ <b>I am working degraded right now</b>"] + [f"• {b}" for b in blind]
+
     for f in sorted(live, key=lambda x: 0 if x.get("tier") == "page" else 1)[:5]:
         L.append(f"• {_plain(f)}  <code>{f.get('id')}</code>")
     if len(live) > 5:
@@ -516,7 +552,13 @@ def handle(s, m):
     cmd, *args = text.split()
     cmd = cmd.split("@")[0].lower()
     OUTCOME.update(outcome="command", action=cmd)
-    CASE_CMDS = ("/reported", "/contained", "/close", "/watching", "/reopen", "/ack", "/snooze")
+    CASE_CMDS = ("/reported", "/contained", "/close", "/watching", "/reopen", "/ack",
+                 "/snooze", "/quiet")
+    # Verbs the reader was TOLD to use, which still fall through to the catch-all when
+    # the case id is missing. Those must be answered with "that needs a case id", never
+    # with "I do not know that": /help names /quiet and /snooze, and a person told the
+    # quieting command does not exist stops trying to quiet the case.
+    NEEDS_ID = CASE_CMDS + ("/unmute", "/link")
     if rf and cmd in CASE_CMDS and (not args or not find(s, args[0])[1]):
         args = [rf.get("id")] + list(args)          # replying supplies the case id
 
@@ -532,9 +574,10 @@ def handle(s, m):
               "/reported &lt;id&gt; [note] \u2014 team informed. I go quiet unless it keeps growing.\n"
               "/contained &lt;id&gt; [what was done] \u2014 a fix is in. Any further activity pages you.\n"
               "/watching &lt;id&gt; \u00b7 /close &lt;id&gt; \u00b7 /reopen &lt;id&gt;\n\n"
-              "<b>Quieting noise</b>\n"
-              "/snooze &lt;id&gt; &lt;hours&gt; \u2014 one case, quiet for that long. It still arrives afterwards.\n"
-              "/ack &lt;id&gt; [note] \u2014 one case, no more routine repeats.\n\n"
+              "<b>Quieting one case</b>\n"
+              "/snooze &lt;id&gt; &lt;hours&gt; \u2014 quiet for that long, then it arrives anyway. "
+              "<code>/quiet</code> is the same command.\n"
+              "Nothing quiet is thrown away, and there is no way to silence a whole signal.\n\n"
               "<b>When I cannot tell which case you mean</b>\n"
               "Reply to the message and send /link &lt;id&gt; \u2014 I will remember that "
               "message, and anything replying to it, as that case.", mid)
@@ -561,21 +604,70 @@ def handle(s, m):
                      "watching": "No repeats; I will tell you if it changes materially."}[st]
             reply(f"{icon} <b>{st}</b> \u2014 <code>{f.get('id')}</code> ({meaning})\n{extra}", mid)
         return 1
-    elif cmd in ("/ack", "/snooze") and args:
+    elif cmd == "/ack":
+        # THE RETIRED VERB (council \u00a75, vote 9). /ack wrote ack_by and nothing else, so
+        # _suppressed() returned "acked" for ever: the case left /cases, never repeated,
+        # and could not escalate \u2014 a mute button under an acknowledging name, printed as
+        # the loudest instruction on every alert. The FIELD stays (state_sync.HUMAN_FIELDS,
+        # prune()._settled and _suppressed all read it); the VERB is what is being removed.
+        # Deleting this branch would drop the muscle-memory typist into `return 0`, which
+        # is silence (\u00a76.2), and quietly re-routing them to `watching` would change what
+        # they asked for behind their back. So it does the nearest honest thing \u2014
+        # `watching` keeps the case in /cases and lets run.py escalate it if it grows
+        # 1.5x \u2014 and the confirmation says the verb is gone and what was recorded.
+        if not allowed:
+            deny(); return 0
+        if not args:
+            reply("<code>/ack</code> is retired \u2014 it silenced a case for good instead of "
+                  "recording a decision, including the alert that would have told you a fix "
+                  "did not hold. <b>Nothing was changed.</b>\n"
+                  "Reply to the alert with <b>watching</b>, or send <code>/cases</code> for the "
+                  "ids and use <code>/watching &lt;id&gt;</code>. To quiet one case for a while: "
+                  "<code>/snooze &lt;id&gt; &lt;hours&gt;</code>.", mid)
+            return 0
+        k, f = set_status(s, args[0], "watching", uid, " ".join(args[1:]), when=m.get("date"))
+        if not f:
+            reply(f"no case matching <code>{_esc(args[0])}</code> \u2014 send "
+                  f"<code>/cases</code> for the ids", mid)
+            return 0
+        OUTCOME.update(case=f.get("id"), action="watching (/ack is retired)")
+        reply(f"\U0001f440 <b>watching</b> \u2014 <code>{f.get('id')}</code> (seen, still "
+              f"watching)\nNo repeats; I will tell you if it changes materially.\n"
+              f"<i><code>/ack</code> is retired: it used to silence the case permanently. I "
+              f"recorded <b>watching</b> instead, which keeps it in <code>/cases</code>. If you "
+              f"meant \u201cquiet for a while\u201d, send <code>/snooze {f.get('id')} 6</code>.</i>",
+              mid)
+        return 1
+    elif cmd in ("/snooze", "/quiet") and args:
+        # `/quiet <id>` is the council's name for this (\u00a75, vote 8) and `/snooze` is the
+        # name every message already in the channel uses, so both spellings run the same
+        # branch. What the council cut was the SCOPE of `/mute <signal>`: this is ONE
+        # case, and telegram._suppressed()/send_pending() HOLD it (pending_send stays
+        # True) instead of clearing it, so it arrives when the timer ends (\u00a76.6).
         if not allowed:
             deny(); return 0
         k, f = find(s, args[0])
         if not f:
             reply(f"no open finding matching <code>{_esc(args[0])}</code>", mid); return 0
-        now = dt.datetime.now(dt.UTC)
-        if cmd == "/ack":
-            f["ack_by"] = uid; f["ack_ts"] = now.isoformat()
-            if len(args) > 1: f["ack_note"] = " ".join(args[1:])[:200]
-            reply(f"\u2705 acked <code>{f.get('id')}</code> \u00b7 {f.get('signal')}", mid)
+        # Timed from when the person typed it, not from when the poll read it: "quiet
+        # for 6 h" typed at 02:20 and read at 03:16 bought 56 minutes of silence nobody
+        # asked for (the same defect as status_ts, fix-round critic #5).
+        base = _sent_at(m.get("date"))
+        h = float(args[1]) if len(args) > 1 and args[1].replace(".", "").isdigit() else 6
+        until = base + dt.timedelta(hours=h)
+        f["snooze_until"] = until.isoformat()
+        if until <= dt.datetime.now(dt.UTC):
+            # Never tell a reader a case is quiet when it is not: the window they asked
+            # for closed while their message sat in the poll queue.
+            reply(f"\U0001f634 <code>{f.get('id')}</code> \u2014 the {h:g} h you asked for ran "
+                  f"from when you sent this ({base:%H:%M} UTC) and has already passed, so this "
+                  f"case is <b>not</b> quiet: it sends in the next run. Send it again for "
+                  f"{h:g} h from now.", mid)
         else:
-            h = float(args[1]) if len(args) > 1 and args[1].replace(".", "").isdigit() else 6
-            f["snooze_until"] = (now + dt.timedelta(hours=h)).isoformat()
-            reply(f"\U0001f634 snoozed <code>{f.get('id')}</code> for {h:g} h", mid)
+            reply(f"\U0001f634 quiet \u2014 <code>{f.get('id')}</code> until <b>{until:%H:%M} "
+                  f"UTC</b> ({h:g} h from when you sent this).\nIt is <b>held, not dropped</b>: "
+                  f"it arrives then. Mark it <b>contained</b> instead if you want any further "
+                  f"activity to page you straight away.", mid)
         return 1
     elif cmd == "/link":
         # The permanent limit this cannot fix: Telegram will not enumerate messages
@@ -616,8 +708,28 @@ def handle(s, m):
     elif cmd == "/mute":
         reply("\u26a0\ufe0f <code>/mute</code> is gone. It muted a whole signal for everyone at "
               "once and quietly threw away every alert that arrived while it was on.\n"
-              "Use <code>/snooze &lt;id&gt; &lt;hours&gt;</code> \u2014 it is one case, and the alert "
-              "still arrives when the time is up.", mid)
+              "Use <code>/snooze &lt;id&gt; &lt;hours&gt;</code>, also spelled <code>/quiet</code> "
+              "\u2014 it is one case, and the alert still arrives when the time is up.", mid)
+        return 0
+    elif "@" not in text.split()[0]:
+        # Every branch above answers. Without this one, a command that reached none of
+        # them \u2014 a typo, a retired verb, /contained with no id and no reply target \u2014
+        # fell off the end into `return 0`, which is silence, and silence is the failure
+        # this whole surface exists to remove (\u00a76.2). A command explicitly addressed to
+        # another bot (/foo@SomeOtherBot) is left alone: answering those would make this
+        # bot talk over every other bot in the group.
+        if cmd in NEEDS_ID:
+            OUTCOME.update(outcome="command", action=f"{cmd} without a usable id")
+            reply(f"<code>{_esc(cmd)}</code> needs a case id and I could not find one \u2014 "
+                  f"<b>nothing was changed</b>.\n"
+                  f"Reply to the alert and send it again, or send <code>/cases</code> for "
+                  f"the ids.", mid)
+            return 0
+        OUTCOME.update(outcome="command", action=f"{cmd} not understood")
+        reply(f"I do not know <code>{_esc(cmd)}</code> \u2014 <b>nothing was changed</b>.\n"
+              f"<code>/cases</code> \u00b7 <code>/status</code> \u00b7 <code>/help</code>, or "
+              f"reply to an alert with <b>reported</b> \u00b7 <b>contained</b> \u00b7 "
+              f"<b>watching</b> \u00b7 <b>closed</b>.", mid)
         return 0
     return 0
 

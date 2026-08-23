@@ -14,7 +14,7 @@ import contextlib, json, os, pathlib, re, sys, tempfile, time, urllib.error, io,
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from notify import telegram, commands, state_sync, msglog   # noqa: E402
+from notify import telegram, commands, state_sync, msglog, watchdog   # noqa: E402
 
 # The message ledger is redirected for the whole test process, before any test runs.
 # A synthetic message_id written into the real ledger would collide with a genuine
@@ -448,6 +448,28 @@ def t_dead_copy():
           "SAFETY BOUNDARY" in (ROOT / "detect" / "signals" / "composite.py").read_text())
 
 
+def t_local_send_guard():
+    """A sender run by hand must not be able to page the live channel."""
+    print("\nrunning a sender by hand")
+    import os
+    from notify import watchdog as wd
+    keep = os.environ.pop("GITHUB_ACTIONS", None)
+    argv = list(sys.argv)
+    try:
+        sys.argv = ["watchdog.py"]
+        check("the watchdog refuses to post from a laptop", not wd._may_send())
+        sys.argv = ["watchdog.py", "--force"]
+        check("--force is still available for a deliberate local test", wd._may_send())
+        sys.argv = ["watchdog.py"]
+        os.environ["GITHUB_ACTIONS"] = "true"
+        check("a scheduled run still posts normally", wd._may_send())
+    finally:
+        sys.argv = argv
+        os.environ.pop("GITHUB_ACTIONS", None)
+        if keep is not None:
+            os.environ["GITHUB_ACTIONS"] = keep
+
+
 def t_gate_failure():
     """A red behaviour gate must not be able to take the channel dark in silence."""
     print("\nwhen my own checks fail")
@@ -800,10 +822,143 @@ def t_owner():
             os.environ["THRESHOLDS_JSON"] = old_env
 
 
+# ---------------------------------------------------------------- the council cut list
+
+def t_cut_list():
+    """No verb is a dead end, and nothing quiet is a drop (council §5)."""
+    print("\nthe retired verbs")
+    real_api, real_chat, real_root = commands.api, commands.CHAT, commands.ROOT
+    out = []
+    typed = int(time.time()) - 3600           # typed an hour ago, read by this poll
+
+    def fresh():
+        f = {"id": "c1", "key": "0x" + "a" * 40, "signal": "10", "tier": "page",
+             "value": 5.0, "pending_send": True}
+        return {"open": {f["key"]: f}, "telegram_offset": 0}, f
+
+    def cmd(text, state, when=typed):
+        out.clear()
+        commands.handle(state, {"text": text, "message_id": 5, "date": when,
+                                "chat": {"id": "-100"}, "from": {"id": "999"}})
+        return "\n".join(out)
+
+    try:
+        commands.api = lambda method, **p: (out.append(p.get("text", "")) or
+                                            {"ok": True, "result": {"message_id": 7}})
+        commands.CHAT = lambda: "-100"
+        os.environ["TELEGRAM_ACK_USER_IDS"] = "999"
+
+        # (a) the verb is retired; the field it wrote is load-bearing and stays.
+        st, f = fresh()
+        said = cmd("/ack c1", st)
+        check("/ack records a decision instead of muting the case for good",
+              f.get("status") == "watching", str(f.get("status")))
+        check("/ack says the verb is retired and what it recorded instead",
+              "retired" in said and "watching" in said, said[:110])
+        check("a case handled by /ack is still listed in /cases",
+              "c1" in commands.cases_text(st))
+        # The sentence used to claim /ack preserves escalation. It does not prove that:
+        # _suppressed() short-circuits on the escalation string before it reads ack_by
+        # or status, so it passes identically with or without this change. What it does
+        # prove is the sender's half — that an escalation is not swallowed. Whether the
+        # detector RAISES one on an /ack'd case is diff_state's job and belongs in
+        # test_gate.py. A check whose sentence claims more than its condition is exactly
+        # how this suite once asserted a bug as correct.
+        check("an escalation is not swallowed by the sender, whatever /ack wrote",
+              telegram._suppressed(dict(f, escalation="activity after containment"), {}) is None)
+        check("/ack still writes ack_by, which state_sync and prune read",
+              f.get("ack_by") == "999", str(f.get("ack_by")))
+        check("/ack with no id answers instead of falling silent",
+              "Nothing was changed" in cmd("/ack", fresh()[0]))
+        check("/help no longer advertises /ack", "/ack" not in cmd("/help", fresh()[0]))
+
+        # (b) /quiet is the council's name for the case-scoped /snooze that exists.
+        st, f = fresh()
+        said = cmd("/quiet c1 6", st)
+        check("/quiet is accepted as a spelling of /snooze",
+              f.get("snooze_until") is not None, said[:90])
+        check("the quiet window runs from when the person typed it, not from the poll",
+              abs(dt.datetime.fromisoformat(f["snooze_until"]).timestamp()
+                  - (typed + 6 * 3600)) < 2, str(f.get("snooze_until")))
+        check("the confirmation names the time it comes back and says it is held",
+              "UTC" in said and "held, not dropped" in said, said[:160])
+        check("a quiet case is HELD by the sender, not dropped",
+              telegram._suppressed(f, {}) == "snoozed")
+
+        st2, f2 = fresh()
+        said2 = cmd("/quiet c1 0.5", st2)
+        plain = said2.replace("<b>", "").replace("</b>", "")
+        check("a quiet window that expired inside the polling gap is not called quiet",
+              "is not quiet" in plain, plain[:170])
+        check("and that case really is still sending", telegram._suppressed(f2, {}) is None)
+
+        # No slash command is a dead end.
+        check("an unknown command still gets an answer",
+              "nothing was changed" in cmd("/freeze c1", fresh()[0]))
+        check("/contained with no id and no reply target still gets an answer",
+              "nothing was changed" in cmd("/contained", fresh()[0]))
+        check("a command aimed at another bot is left alone",
+              cmd("/start@SomeOtherBot", fresh()[0]).strip() == "")
+
+        # (c) /status must not read as an all-clear while the detector is blind.
+        d = pathlib.Path(tempfile.mkdtemp(prefix="moca-hb-"))
+        (d / "heartbeat.json").write_text(json.dumps(
+            {"run_ts": dt.datetime.now(dt.UTC).isoformat(),
+             "mindset_age_h": 61.0, "lag_blocks": 5400}))
+        commands.ROOT = d
+        txt = commands.status_text({"open": {}})
+        check("/status says what it is blind to instead of reading as an all-clear",
+              "degraded" in txt, txt[-160:])
+        check("/status still prints no machine jargon",
+              "lag" not in txt and "rows" not in txt and "mindset" not in txt)
+        (d / "heartbeat.json").write_text(json.dumps(
+            {"run_ts": dt.datetime.now(dt.UTC).isoformat(),
+             "mindset_age_h": 3.0, "lag_blocks": 12}))
+        check("a healthy run adds no degradation line at all",
+              "degraded" not in commands.status_text({"open": {}}))
+        # Asserted on the object commands.py actually bound, not on the test module's
+        # own import — otherwise commands.py could pick up a different module entirely
+        # and this check would keep passing.
+        check("/status only repeats what the watchdog already announces to this group",
+              (commands.watchdog.MINDSET_STALE_H, commands.watchdog.LAG_BLOCKS_MAX) == (48, 900)
+              and commands.watchdog is watchdog,
+              f"{commands.watchdog.MINDSET_STALE_H} h / {commands.watchdog.LAG_BLOCKS_MAX} blocks")
+    finally:
+        commands.api, commands.CHAT, commands.ROOT = real_api, real_chat, real_root
+        os.environ.pop("TELEGRAM_ACK_USER_IDS", None)
+        commands.UNDELIVERED.clear()
+
+
+def t_digest_example():
+    """The digest example is picked by the measurement, not by string length."""
+    print("\nthe digest example")
+    from notify import explain
+    long_string = {"signal": "13", "value": 0.70, "threshold": 0.6, "tier": "digest",
+                   "window": "24h", "key": "0x" + "a" * 40, "ts": 100,
+                   "detail": "1,234,567 MOCA out, score 0.70"}
+    furthest = {"signal": "13", "value": 0.95, "threshold": 0.6, "tier": "digest",
+                "window": "24h", "key": "0x" + "b" * 40, "ts": 200,
+                "detail": "9 MOCA out, score 0.95"}
+    body = explain.digest([long_string, furthest])
+    check("the digest example is the finding furthest past its own normal",
+          "sent 9 MOCA" in body, body.splitlines()[-3].strip())
+    check("the longest detail string no longer decides what a reader is shown",
+          "1,234,567" not in body)
+    check("the example is offered as an example, not as the largest",
+          "one of them:" in body and "e.g." not in body)
+    check("a finding with no threshold ranks on its own size",
+          explain._extremity({"value": 179.0, "ts": 2})
+          > explain._extremity({"value": 170.0, "ts": 3}))
+    check("a balance that dropped ranks as far from normal as one that rose",
+          explain._extremity({"value": -500.0}) > explain._extremity({"value": 12.0}))
+    check("a finding carrying no numbers at all does not crash the picker",
+          explain._extremity({"detail": "x"}) == (0.0, 0.0, 0.0))
+
+
 def main():
     for fn in (t_incident, t_holding, t_alarm, t_post, t_replies, t_reply_time,
-               t_reply_delivery, t_dead_copy, t_gate_failure, t_shadow, t_cluster,
-               t_owner,
+               t_reply_delivery, t_dead_copy, t_local_send_guard, t_gate_failure, t_shadow, t_cluster,
+               t_owner, t_cut_list,
                t_leaks,
                t_price, t_msglog,
                t_merge, t_prune):
