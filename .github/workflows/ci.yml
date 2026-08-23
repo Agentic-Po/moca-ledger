@@ -16,6 +16,10 @@ jobs:
         run: python3 tests/test_pii.py --tree .
       - name: State gate (size cap, restore fallback, no enrichment re-dispatch)
         run: python3 tests/test_state.py
+      # Also runs inside crawl.yml, but that is every ten minutes on the live channel.
+      # A push must be able to fail here, before it reaches the group.
+      - name: Alerting behaviour gate (incident mode, replies, leaks)
+        run: python3 tests/test_notify.py
       - name: Detector gate (replay deadlines + benign windows + parity)
         env: { MINDSET_SALT: "${{ secrets.MINDSET_SALT }}" }
         run: python3 tests/test_gate.py

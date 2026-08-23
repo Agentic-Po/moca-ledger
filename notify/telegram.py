@@ -312,20 +312,62 @@ def _must_hear(f, inc):
     return None
 
 
+DOUBLED_SOUND = "new alerts have at least doubled since the last run"
+
+
 def _sound_reason(f, inc):
-    """Why this finding is allowed to make a sound inside an incident. None = silent."""
+    """Why this finding is allowed to make a sound inside an incident. None = silent.
+
+    Three of Po's four triggers are properties of the finding and live here. The
+    fourth — the rate doubling — is a property of the RUN and is applied once, in
+    _sound_plan.
+
+    There used to be a fifth, "the largest payout total this incident has seen",
+    which nobody asked for: `t >= 2 * (inc["max_moca"] or 0)` is `t >= 0` before
+    anything has sounded, so the first money-bearing finding of every incident
+    sounded unconditionally — and the header advertised the invented rule to the
+    reader as if it were policy."""
     must = _must_hear(f, inc)
     if must:
         return must
-    # Size, not just novelty. Signal classes are cheap to trip on purpose; a total
-    # larger than anything this incident has already sounded for is not.
-    t = _moca(f)
-    if t > 0 and t >= 2 * float(inc.get("max_moca") or 0):
-        return "the largest payout total this incident has seen"
     sig = str(f.get("signal") or "?")
     if sig not in (inc.get("classes") or []):
         return f"first {sig} alert in this incident"
     return None
+
+
+def _sound_plan(batch, inc, doubled):
+    """Decide ONCE per run which findings sound: {finding id: reason}.
+
+    Two reasons this is a plan and not a per-finding call:
+
+    * The header promises "N below will sound". That count used to be computed
+      from one pass and the sends from another, while the send loop appended to
+      inc["classes"] underneath it — so the header could promise a sound that
+      never arrived.
+    * "The rate doubling" is Po's fourth trigger and is a run-level fact. It sounds
+      ONCE, on the first batch member that has no other reason; firing it on all
+      six would be the burst of pings incident mode exists to prevent.
+    """
+    work = {"classes": list(inc.get("classes") or []),
+            "cashouts": list(inc.get("cashouts") or [])}
+    plan, doubling_left = {}, bool(doubled)
+    for f in batch:
+        reason = _sound_reason(f, work)
+        if reason is None and doubling_left:
+            reason = DOUBLED_SOUND
+            doubling_left = False
+        if reason:
+            plan[str(f.get("id"))] = reason
+        # Registered for every batch member, sounding or not: they are all being
+        # sent, so the class HAS been shown and must not ring again three lines down.
+        sig = str(f.get("signal") or "?")
+        if sig not in work["classes"]:
+            work["classes"].append(sig)
+        addr = _cashout_addr(f)
+        if addr and addr not in work["cashouts"]:
+            work["cashouts"].append(addr)
+    return plan
 
 
 def _money_totals(findings):
@@ -348,13 +390,22 @@ def _money_totals(findings):
     return sum(v[0] for v in per.values()), sum(v[1] for v in per.values()), per
 
 
-def _incident_state(s, n_loud, arrivals, now):
+def _incident_state(s, loud, arrivals, now):
     """(inc, on, doubled). Opens, carries or expires the one incident object.
 
     An incident ends on the TTL — six hours with nothing loud — not on the first
     quiet run. A run with nothing pending is routine mid-burst (findings only
     re-fire when they grow), and ending there un-muted the channel and re-armed
-    every signal class to ring again as "first in this incident"."""
+    every signal class to ring again as "first in this incident".
+
+    `loud` is the queue, not a count, because the run that OPENS an incident has
+    to seed `classes` from it. It used to open with `classes: []`, so every
+    distinct signal already waiting counted as "first of its class" and the
+    opening run sent the header plus one loud ping per signal — 7 loud messages
+    on an 8-finding batch. The opening run is precisely the moment the channel
+    gets muted by a person, and it was the worst run in the incident. The first
+    wave IS the incident; the header is its ping. Only a class that turns up in a
+    LATER run is news."""
     thr_min = int(_thresholds().get("incident_mode_min", 3) or 3)
     inc = s.get("incident") or {}
     expired = bool(inc) and now - float(inc.get("last_ts") or 0) > INCIDENT_TTL_S
@@ -362,10 +413,15 @@ def _incident_state(s, n_loud, arrivals, now):
         inc = {}
     prev = int(s.get("arrivals_prev") or 0)
     doubled = prev > 0 and arrivals >= 2 * prev
-    on = n_loud > thr_min or bool(inc)
+    on = len(loud) > thr_min or bool(inc)
     if on and not inc:
+        # Seeded from the whole queue, not just the six that will be shown: the held
+        # remainder is the same wave, and it arrives under its own loud header later.
+        # `cashouts` is NOT seeded — a first cash-out to a destination is one of the
+        # things Po said a person must hear even in the opening minute.
         inc = {"started": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
-               "runs": 0, "classes": [], "cashouts": [], "max_moca": 0.0, "last_ts": now}
+               "runs": 0, "cashouts": [], "last_ts": now,
+               "classes": sorted({str(f.get("signal") or "?") for f in loud})}
     return inc, on, doubled
 
 
@@ -383,7 +439,7 @@ def _since_words(started):
     return f"{mins // 60} h {mins % 60:02d} min", mins / 60.0
 
 
-def _incident_header(loud, batch, inc, arrivals, arrivals_prev, held_prev, doubled):
+def _incident_header(loud, batch, inc, arrivals, arrivals_prev, held_prev, doubled, plan):
     """The single loud message. Counts, money, top wallets, and the limits of all
     of it — a reader who only ever sees this message must not be misled by it."""
     HEDGE = _hedge()
@@ -446,14 +502,13 @@ def _incident_header(loud, batch, inc, arrivals, arrivals_prev, held_prev, doubl
               f"last run — arrivals have at least doubled.", ""]
 
     held = len(loud) - n_shown
-    sounding = [f for f in batch if _sound_reason(f, inc)]
     L += [f"Showing {n_shown} of {len(loud)} below"
           + (f"; {held} held — they send in later runs, newest last." if held > 0 else "."),
           "The alerts below are <b>silent</b> unless marked otherwise — this message is the "
-          "ping. Sound is kept for: a signal type not yet seen in this incident, a first "
-          "cash-out to a destination, a payout total bigger than any so far, and a case you "
-          "marked contained firing again."
-          + (f" {len(sounding)} below will sound." if sounding else ""), "",
+          "ping. Sound is kept for four things: a signal type not yet seen in this incident, "
+          "a first cash-out to a destination, a case you marked contained firing again, and "
+          "the rate of new alerts doubling."
+          + (f" {len(plan)} below will sound." if plan else ""), "",
           "<b>This does not see everything.</b> Some ways of moving value produce no alert at "
           "all, and what is shown can be several minutes behind. Silence here is not an "
           "all-clear. Nothing has been paused or blocked — this bot only informs.", "",
@@ -490,7 +545,7 @@ def send_pending():
     arrivals_prev = int(s.get("arrivals_prev") or 0)
 
     now = time.time()
-    inc, incident_on, doubled = _incident_state(s, len(loud), arrivals, now)
+    inc, incident_on, doubled = _incident_state(s, loud, arrivals, now)
     if not incident_on and s.get("incident"):
         prev_inc = s.pop("incident")
         print("incident: over (six hours with nothing loud)")
@@ -529,11 +584,15 @@ def send_pending():
         return (must, 0 if f.get("tier") == "page" else 1, str(f.get("first_ts") or ""))
     batch = sorted(loud, key=_rank)[:INCIDENT_SHOW]
 
+    # ---- who sounds. Decided once, before the header, so the header's promise and
+    # the sends below are the same decision (see _sound_plan).
+    plan = _sound_plan(batch, inc, doubled) if incident_on else {}
+
     # ---- the one loud message. If it does NOT deliver, the findings below stay
     # loud: silencing them behind a header nobody received would mute the run.
     header_ok = False
     if incident_on and batch:
-        header = _incident_header(loud, batch, inc, arrivals, arrivals_prev, held_prev, doubled)
+        header = _incident_header(loud, batch, inc, arrivals, arrivals_prev, held_prev, doubled, plan)
         s["incident"] = inc; save_state(s)               # commit intent BEFORE sending
         header_ok = True
         err = None
@@ -551,7 +610,7 @@ def send_pending():
             print("incident: header undelivered — findings below stay loud")
 
     for f in batch:
-        reason = _sound_reason(f, inc) if (incident_on and header_ok) else None
+        reason = plan.get(str(f.get("id"))) if (incident_on and header_ok) else None
         silent = bool(incident_on and header_ok and not reason)
         f["pending_send"] = False; f["last_sent"] = dt.datetime.now(dt.UTC).isoformat()
         f["alert_seq"] = _alert_seq(s, f)                   # footer: "6th alert on this wallet"
@@ -582,7 +641,6 @@ def send_pending():
                 if addr not in co:
                     co.append(addr)
                     del co[:-CASHOUT_KEEP]               # bounded: one incident object, ~430 findings
-            inc["max_moca"] = max(float(inc.get("max_moca") or 0), _moca(f))
         save_state(s)
         print(f["tier"], f.get("signal"), "->", r.get("ok"), "silent" if silent else "loud")
 

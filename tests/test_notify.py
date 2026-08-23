@@ -9,7 +9,7 @@ sender is stubbed and every state file is a temporary one.
 
 Usage:  python3 tests/test_notify.py        (exit 1 on any failure)
 """
-import json, pathlib, sys, tempfile, time, urllib.error, io, datetime as dt
+import json, pathlib, re, sys, tempfile, time, urllib.error, io, datetime as dt
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -108,7 +108,7 @@ def t_incident():
           telegram._cashout_addr(dict(cash, value=-250000)) is None)
 
     # Burning it at one destination must not disarm it at another.
-    inc = {"cashouts": [telegram._cashout_addr(cash)], "classes": ["S-X"], "max_moca": 0}
+    inc = {"cashouts": [telegram._cashout_addr(cash)], "classes": ["S-X"]}
     other = dict(cash, key="0x%040x" % 0xbeef)
     check("the cash-out siren is per destination, not one global latch",
           telegram._sound_reason(other, inc) is not None,
@@ -116,20 +116,63 @@ def t_incident():
 
     # An incident survives a quiet run and ends on the TTL.
     inc_on = {"started": "2026-08-23T00:00:00", "runs": 3, "classes": ["10"],
-              "cashouts": [], "max_moca": 0, "last_ts": now - 60}
-    _, on, _ = telegram._incident_state({"incident": dict(inc_on)}, 0, 0, now)
+              "cashouts": [], "last_ts": now - 60}
+    _, on, _ = telegram._incident_state({"incident": dict(inc_on)}, [], 0, now)
     check("one quiet run does NOT end an incident", on)
-    _, on2, _ = telegram._incident_state({"incident": dict(inc_on, last_ts=now - 7 * 3600)}, 0, 0, now)
+    _, on2, _ = telegram._incident_state({"incident": dict(inc_on, last_ts=now - 7 * 3600)}, [], 0, now)
     check("six quiet hours DOES end an incident (the TTL is reachable)", not on2)
 
-    # The opening run must not pre-register the classes it is about to see.
+    # ---- the run that OPENS an incident sends ONE loud message, not N.
+    # Po's decision 1. This test previously asserted the opposite and CI defended
+    # it: with classes seeded empty, every distinct signal already pending counted
+    # as "first of its class" and the opening run rang once per signal.
     s, sent = run(Bed([_finding(i, signal=str(10 + i)) for i in range(5)]))
-    inc2 = s.get("incident") or {}
     header = sent[0]["text"] if sent else ""
     check("the header is the first message of an incident run", "Incident mode" in header)
-    sounded = [x for x in sent[1:] if not x["silent"]]
-    check("the opening run's first alert of each signal class still sounds",
-          len(sounded) > 0, f"{len(sounded)} of {len(sent) - 1} sounded")
+    check("the opening run sends exactly one loud message — the header",
+          sum(1 for x in sent if not x["silent"]) == 1,
+          f"{sum(1 for x in sent if not x['silent'])} loud of {len(sent)}")
+    check("the opening run seeds the classes it is showing",
+          sorted((s.get("incident") or {}).get("classes") or []) == sorted(str(10 + i) for i in range(5)),
+          str((s.get("incident") or {}).get("classes")))
+
+    # A class that turns up in a LATER run is news and still sounds.
+    later = _finding(70, signal="S-NEW")
+    s5, sent5 = run(Bed([later], loud_held=0, arrivals_prev=1,
+                        incident=dict(inc_on, last_ts=now)))
+    check("a signal class first seen in a later run does sound",
+          any(not x["silent"] and "first S-NEW alert" in x["text"] for x in sent5),
+          "; ".join(f"{x['silent']}" for x in sent5))
+
+    # The invented fifth trigger is gone.
+    check("'largest payout total' is not a sound reason any more",
+          telegram._sound_reason(_finding(71, signal="10", moca_since=9e9),
+                                 {"classes": ["10"], "cashouts": []}) is None)
+
+    # ---- Po's fourth trigger: the rate doubling. Computed AND sounded, once.
+    quad = [_finding(80 + i, signal="10") for i in range(4)]
+    s6, sent6 = run(Bed(quad, loud_held=0, arrivals_prev=2,
+                        incident=dict(inc_on, last_ts=now)))
+    dbl = [x for x in sent6[1:] if telegram.DOUBLED_SOUND in x["text"]]
+    check("a doubled arrival rate makes exactly one finding sound", len(dbl) == 1,
+          f"{len(dbl)} findings cite the doubling")
+    check("the doubling sound is actually audible", dbl and dbl[0]["silent"] is False)
+    check("the header advertises the doubling as policy, not an invented rule",
+          "the rate of new alerts doubling" in sent6[0]["text"]
+          and "bigger than any so far" not in sent6[0]["text"])
+    s7, sent7 = run(Bed([_finding(90 + i, signal="10") for i in range(4)],
+                        loud_held=0, arrivals_prev=99, incident=dict(inc_on, last_ts=now)))
+    check("a flat run does not cite the doubling",
+          not any(telegram.DOUBLED_SOUND in x["text"] for x in sent7))
+
+    # The header's promise and the sends must be the same decision.
+    for label, msgs in (("opening", sent), ("doubled", sent6), ("flat", sent7)):
+        head = msgs[0]["text"]
+        m = re.search(r"(\d+) below will sound", head)
+        promised = int(m.group(1)) if m else 0
+        actual = sum(1 for x in msgs[1:] if not x["silent"])
+        check(f"the {label} header's sound count matches what sounds", promised == actual,
+              f"header promised {promised}, {actual} sounded")
 
     # Counts describe arrivals, not the backlog.
     check("the header counts arrivals, not queue depth", "5 new alert(s) this run" in header,
