@@ -420,6 +420,47 @@ def t_price():
           any("price" in l for l in lines), " | ".join(lines)[:120])
 
 
+def t_gate_failure():
+    """A red behaviour gate must not be able to take the channel dark in silence."""
+    print("\nwhen my own checks fail")
+    wf = (ROOT / ".github" / "workflows" / "crawl.yml").read_text()
+
+    def step(name):
+        """The step's own keys — stopping at the next step OR the comment above it.
+        PyYAML is not a dependency here (requirements.txt is matplotlib alone), and
+        splitting on "- name:" alone swept in the comment that explains this very
+        change, which contains the word it was looking for."""
+        body = wf.split(f"- name: {name}\n", 1)[1].splitlines()
+        out = []
+        for line in body:
+            s = line.strip()
+            if s.startswith("#") or s.startswith("- name:"):
+                break
+            out.append(line)
+        return "\n".join(out)
+
+    check("the behaviour gate cannot stop the send path any more",
+          "continue-on-error: true" in step("Alerting behaviour gate"))
+    check("the PII gate still DOES stop it — a leak cannot be undone",
+          "continue-on-error" not in step("PII gate"), step("PII gate").strip()[:60])
+    check("a failed gate is announced in the channel, not only in the run log",
+          "--gate-failed" in wf and "BEHAVIOUR_GATE" in wf)
+
+    with Bed([]) as bed:
+        telegram.gate_failed("https://example.invalid/run/1")
+        first = list(SENT)
+        check("the notice says alerts are still going out",
+              first and "still being sent" in first[0]["text"], first[0]["text"][:70] if first else "")
+        check("the notice sounds — it is not itself a quiet failure",
+              first and first[0]["silent"] is False)
+        check("it does not tell the reader silence is safe",
+              first and "all-clear" in first[0]["text"] and "not" in first[0]["text"])
+        SENT.clear()
+        telegram.gate_failed("https://example.invalid/run/2")
+        check("a gate stuck red does not repost every ten minutes", not SENT,
+              f"{len(SENT)} repeat(s)")
+
+
 # ---------------------------------------------------------------- the message ledger
 
 def t_msglog():
@@ -536,7 +577,8 @@ def t_prune():
 
 def main():
     for fn in (t_incident, t_holding, t_alarm, t_post, t_replies, t_reply_time,
-               t_reply_delivery, t_leaks, t_price, t_msglog, t_merge, t_prune):
+               t_reply_delivery, t_gate_failure, t_leaks, t_price, t_msglog,
+               t_merge, t_prune):
         fn()
     bad = [n for ok, n, _ in RESULTS if not ok]
     print(f"\nnotify: {'FAIL — ' + str(len(bad)) + ' check(s)' if bad else 'OK — all ' + str(len(RESULTS)) + ' checks green'}")

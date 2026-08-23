@@ -58,15 +58,28 @@ jobs:
           fi
           python3 detect/run.py --quiet
 
+      # STOPS the job on purpose. A leak is the one failure that cannot be undone —
+      # members forward and deleteMessage recalls nothing — so not sending is right.
       - name: PII gate
         run: python3 tests/test_pii.py --tree .
 
-      # Behaviour, not just privacy. These are the checks that prove the channel does
-      # not go quiet, lie or leak: incident mode ends on its TTL, a cash-out gets a
-      # slot during a burst, a snoozed finding is held rather than dropped, a reply
-      # of "not yet contained" records nothing, and no chart carries a threshold.
-      # They send nothing and never touch alerts/state.json.
+      # Behaviour, not privacy: incident mode ends on its TTL, a cash-out gets a slot
+      # during a burst, a snoozed finding is held rather than dropped, a reply of "not
+      # yet contained" records nothing, no chart carries a threshold. It sends nothing
+      # and never touches alerts/state.json.
+      #
+      # continue-on-error is load-bearing. This step sits directly above the live send
+      # path under `bash -e`, so while it was blocking, one red check here did not fail
+      # a test run — it stopped Notify, stopped commands.py reading replies, and stopped
+      # the state push, EVERY TEN MINUTES, on a schedule, until a person happened to
+      # open the Actions tab. A behaviour regression is not a reason to take the channel
+      # dark for hours; ci.yml already gates it on push, and a leak is the only failure
+      # worth refusing to send over. The run still goes RED and the group is still told
+      # (see --gate-failed in the Notify step) — the outcome that is forbidden here is
+      # a channel that is quiet and nobody knows why.
       - name: Alerting behaviour gate
+        id: behaviour_gate
+        continue-on-error: true
         run: python3 tests/test_notify.py
 
       - name: Notify (page/notify/digest)
@@ -76,8 +89,16 @@ jobs:
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_ACK_USER_IDS: ${{ secrets.TELEGRAM_ACK_USER_IDS }}
           PRIVATE_REPO_PAT:   ${{ secrets.PRIVATE_REPO_PAT }}
+          BEHAVIOUR_GATE:     ${{ steps.behaviour_gate.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           rc=0
+          # Say it in the channel, not only in a log nobody is reading at 04:00.
+          if [ "$BEHAVIOUR_GATE" = "failure" ]; then
+            echo "alerting behaviour gate FAILED — alerts still going out, run will be red"
+            python3 notify/telegram.py --gate-failed "$RUN_URL" || echo "could not announce the gate failure"
+            rc=1
+          fi
           # Alerts must still go out even when the reply loop, the watchdog or the
           # message ledger is broken — but the run must go RED afterwards. "Green and
           # blind" is the failure class this whole channel exists to avoid (§6.2).

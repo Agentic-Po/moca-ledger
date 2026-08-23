@@ -730,6 +730,27 @@ def send_pending():
         save_state(s)
     return 0
 
+def gate_failed(url):
+    """The alerting behaviour gate went red and we sent anyway. Say so, once per 6 h.
+
+    The gate no longer blocks the send path (crawl.yml): a behaviour regression used to
+    stop Notify, commands.py and the state push every ten minutes until somebody opened
+    the Actions tab. Sending past it is the better trade — but only if the channel is
+    told, or "quiet and nobody knows why" has simply moved one step upstream."""
+    s = load_state(); last = s.get("last_gate_post", 0); now = time.time()
+    if now - last < 6 * 3600:
+        print("gate-failure post deduped"); return 0
+    s["last_gate_post"] = now; save_state(s)
+    _log_out(send(
+        "\u26a0\ufe0f <b>My own behaviour checks are failing.</b>\n"
+        "Alerts are still being sent — I did not go quiet — but something I rely on to "
+        "decide <i>how</i> to alert is not behaving as it was written to. Treat what "
+        "arrives from me as less trustworthy than usual until this clears, and do not "
+        "read silence as an all-clear.\n"
+        f"{url}", silent=False), "notice")
+    return 0
+
+
 def failure(url):
     s = load_state(); last = s.get("last_failure_post", 0); now = time.time()
     if now - last < 6 * 3600 and s.get("last_run_ok", True):
@@ -741,9 +762,11 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--send-pending", action="store_true")
     ap.add_argument("--failure", metavar="URL")
+    ap.add_argument("--gate-failed", metavar="URL", dest="gate_failed")
     ap.add_argument("--test", metavar="TEXT")
     a = ap.parse_args()
     if a.failure: sys.exit(failure(a.failure))
+    if a.gate_failed: sys.exit(gate_failed(a.gate_failed))
     if a.test:
         r = send(a.test); _log_out(r, "test"); print(r); sys.exit(0)
     sys.exit(send_pending())
