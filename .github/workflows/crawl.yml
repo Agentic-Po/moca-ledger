@@ -121,6 +121,13 @@ jobs:
           python3 notify/commands.py || { echo "commands.py exited non-zero"; rc=1; }
           python3 notify/watchdog.py || { echo "watchdog.py exited non-zero"; rc=1; }
           python3 notify/telegram.py --send-pending || { echo "telegram.py --send-pending exited non-zero"; rc=1; }
+          # Proof of life, once per UTC day, keyed off state — so calling it every run is
+          # cheap and idempotent. Po's ask: a channel that is silent for days cannot be
+          # told apart from one that is dead. It refuses to be reassuring when the
+          # detector is running but blind, and it goes red if it could not be delivered,
+          # because the one message whose job is to prove we are not silent must not fail
+          # silently itself.
+          python3 notify/telegram.py --heartbeat || { echo "heartbeat exited non-zero"; rc=1; }
           python3 notify/msglog.py push || { echo "msglog push exited non-zero"; rc=1; }
           exit $rc
 

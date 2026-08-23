@@ -794,6 +794,105 @@ def gate_failed(url):
     return 0
 
 
+# ------------------------------------------------------------------ proof of life
+# Po's ask, and it runs straight into rule 3 (never say all-clear). A channel that is
+# silent for days is indistinguishable from a channel that is dead, and this system's
+# defining failure mode is "quiet, and nobody knows why". So once a day it says it is
+# running — and the whole design problem is saying that without it becoming a
+# reassurance somebody screenshots.
+#
+# Three things keep it honest:
+#   * it carries MOVING NUMBERS (block height, blocks since yesterday, runs). A message
+#     that says "all good" proves nothing; a block height that advanced proves the
+#     pipeline ran end to end. If the numbers stop moving the message says so itself.
+#   * it never claims nothing happened — only that nothing crossed a level, in the same
+#     words the digest already uses.
+#   * it REFUSES to be reassuring when the detector is running but blind. Alive-and-blind
+#     is worse than silent, because silence is at least honest.
+HEARTBEAT_MAX_LAG   = 900     # blocks behind tip before "running" stops meaning "seeing"
+HEARTBEAT_MAX_MIND_H = 48     # address-set age before the same is true
+
+
+def _hb_doc():
+    try:
+        return json.loads((ROOT / "heartbeat.json").read_text())
+    except Exception:
+        return {}
+
+
+def _blind_reasons(hb):
+    """Why a 'still watching' message would be a lie right now. Empty = it is true."""
+    out = []
+    try:
+        lag = int(hb.get("lag_blocks") or 0)
+        if lag > HEARTBEAT_MAX_LAG:
+            out.append(f"I am {lag:,} blocks behind the chain tip, so I am not seeing recent activity")
+    except (TypeError, ValueError):
+        pass
+    try:
+        age = float(hb.get("mindset_age_h") or 0)
+        if age > HEARTBEAT_MAX_MIND_H:
+            out.append(f"my list of which wallets are creators is {age:.0f} h old, "
+                       f"so newer creators may not be recognised")
+    except (TypeError, ValueError):
+        pass
+    if hb.get("detect_ok") is False:
+        out.append("my last detection pass did not finish")
+    if hb.get("thresholds_override_error"):
+        out.append("a threshold override was rejected, so I am running on committed defaults")
+    return out
+
+
+def heartbeat(force=False):
+    """One proof-of-life message per UTC day. Silent. Never an all-clear."""
+    s = load_state()
+    hb = _hb_doc()
+    today = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d")
+    if not force and s.get("last_heartbeat_day") == today:
+        print("heartbeat: already sent today"); return 0
+
+    block = hb.get("ledger_last") or "?"
+    rows = int(hb.get("rows_total") or 0)
+    prev_rows = int(s.get("last_heartbeat_rows") or 0)
+    scanned = rows - prev_rows if prev_rows else None
+    since = s.get("last_heartbeat_day")
+    open_f = hb.get("open_findings") or {}
+    fires = hb.get("fires_last_24h_total")
+
+    live = [f for f in (s.get("open") or {}).values()
+            if f.get("status") in ("reported", "contained", "watching")]
+    blind = _blind_reasons(hb)
+
+    L = ["\U0001f7e2 <b>Still watching.</b>" if not blind
+         else "\u26a0\ufe0f <b>Running, but not seeing properly.</b>"]
+    L.append(f"<i>Chain read up to {block} UTC"
+             + (f" · {scanned:,} new rows since yesterday" if scanned and scanned > 0 else "")
+             + (f" · {fires} thing(s) crossed a level in the last 24 h" if fires is not None else "")
+             + "</i>")
+    if blind:
+        L += ["", "<b>Why that matters:</b>"] + [f"• {b}" for b in blind]
+        L += ["", "Until that clears, treat quiet from me as unknown rather than quiet."]
+    if live:
+        L += ["", f"{len(live)} case(s) you have marked and not closed. <code>/cases</code> for the list."]
+    L += ["", "<i>This is not an all-clear. It means the pipeline ran and wrote a number that "
+              "moved — nothing more. Some ways of moving value produce no alert at all, and I "
+              "cannot pause or block anything.</i>"]
+
+    r = send("\n".join(L), silent=True)
+    _log_out(r, "health")
+    if r.get("ok"):
+        s["last_heartbeat_day"] = today
+        s["last_heartbeat_rows"] = rows
+        save_state(s)
+        print(f"heartbeat: sent ({'blind' if blind else 'ok'}, {scanned if scanned else '?'} new rows)")
+    else:
+        # Never silent about the thing whose entire job is to prove we are not silent.
+        print(f"heartbeat: NOT delivered ({r.get('error')}) — the channel has no proof of life "
+              f"today", file=sys.stderr)
+        return 3
+    return 0
+
+
 def failure(url):
     s = load_state(); last = s.get("last_failure_post", 0); now = time.time()
     if now - last < 6 * 3600 and s.get("last_run_ok", True):
@@ -806,10 +905,13 @@ if __name__ == "__main__":
     ap.add_argument("--send-pending", action="store_true")
     ap.add_argument("--failure", metavar="URL")
     ap.add_argument("--gate-failed", metavar="URL", dest="gate_failed")
+    ap.add_argument("--heartbeat", action="store_true", help="once-a-day proof of life")
+    ap.add_argument("--force", action="store_true", help="with --heartbeat: send even if today already had one")
     ap.add_argument("--test", metavar="TEXT")
     a = ap.parse_args()
     if a.failure: sys.exit(failure(a.failure))
     if a.gate_failed: sys.exit(gate_failed(a.gate_failed))
+    if a.heartbeat:   sys.exit(heartbeat(force=a.force))
     if a.test:
         r = send(a.test); _log_out(r, "test"); print(r); sys.exit(0)
     sys.exit(send_pending())

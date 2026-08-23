@@ -637,6 +637,53 @@ def t_no_intent_claims():
           bool(bad.search("Movement means the operator is active again.")))
 
 
+def t_heartbeat():
+    """Proof of life: it must prove, and it must never reassure."""
+    print("\nthe daily proof of life")
+    with Bed([]) as bed:
+        real = telegram._hb_doc
+        try:
+            telegram._hb_doc = lambda: {"ledger_last": "2026-08-23 14:52", "rows_total": 169822,
+                                        "lag_blocks": 67, "mindset_age_h": 29.0, "detect_ok": True,
+                                        "fires_last_24h_total": 7}
+            telegram.heartbeat(force=True)
+            body = SENT[-1]["text"]
+            check("it is silent — proof of life must not wake anyone", SENT[-1]["silent"] is True)
+            check("it says explicitly that it is not an all-clear", "not an all-clear" in body)
+            check("it says it cannot pause or block anything", "cannot pause or block" in body)
+            check("it carries a moving number, not just a reassurance",
+                  "2026-08-23 14:52" in body, body.splitlines()[1][:70])
+            check("it does not claim nothing happened",
+                  "no issues" not in body.lower() and "all good" not in body.lower()
+                  and "everything is fine" not in body.lower())
+
+            # once a day, not once a run
+            SENT.clear()
+            telegram.heartbeat()
+            check("a second run the same day sends nothing", not SENT, f"{len(SENT)} extra")
+
+            # ALIVE BUT BLIND is the case that must never read as reassurance
+            SENT.clear()
+            telegram._hb_doc = lambda: {"ledger_last": "2026-08-23 14:52", "rows_total": 169822,
+                                        "lag_blocks": 5000, "mindset_age_h": 70.0, "detect_ok": True}
+            telegram.heartbeat(force=True)
+            blind = SENT[-1]["text"]
+            check("running-but-blind does not say 'still watching'", "Still watching" not in blind)
+            check("running-but-blind names why it cannot see", "blocks behind" in blind)
+            check("running-but-blind tells the reader quiet means unknown",
+                  "unknown rather than quiet" in blind)
+        finally:
+            telegram._hb_doc = real
+
+    # and a failure to deliver it must make the run red
+    with Bed([], fail_index=0):
+        rc = telegram.heartbeat(force=True)
+        check("a heartbeat that did not deliver turns the run red", rc == 3, f"rc={rc}")
+
+    wf = (ROOT / ".github" / "workflows" / "crawl.yml").read_text()
+    check("it runs on the schedule, not only by hand", "--heartbeat" in wf)
+
+
 def t_gate_failure():
     """A red behaviour gate must not be able to take the channel dark in silence."""
     print("\nwhen my own checks fail")
@@ -1257,7 +1304,7 @@ def main():
                t_replies, t_reply_time,
                t_reply_delivery, t_dead_copy, t_local_send_guard,
                t_platform_signals_can_speak_twice, t_cadence_honesty,
-               t_no_intent_claims, t_gate_failure, t_shadow, t_cluster,
+               t_no_intent_claims, t_heartbeat, t_gate_failure, t_shadow, t_cluster,
                t_owner, t_cut_list, t_selftest,
                t_leaks,
                t_price, t_msglog,
