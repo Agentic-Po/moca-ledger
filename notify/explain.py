@@ -102,7 +102,10 @@ SIGNALS = {
     "S-G": {
         "title": "A wallet we are already watching just moved",
         "what": "A wallet connected to the August incident has moved MOCA again.",
-        "why": "This wallet is on the watch list from the August incident. Movement means the operator is active again.",
+        # "Movement means the operator is active again" asserted intent from a transfer —
+        # rule 4, in the card most likely to be the first live alert anyone sees. A wallet
+        # is on this list because of what it did in August, and a movement is a movement.
+        "why": "This wallet is on the watch list because of what it did in August. A movement does not say who moved it or why — only that an address connected to the incident is not dormant.",
         "do": "A follow-up message with the account detail may arrive underneath this one. Read it, then decide if this needs escalating.",
         "normal": "These wallets have been quiet since August — that is why they are on the list.",
     },
@@ -116,8 +119,11 @@ SIGNALS = {
     "S-Q2": {
         "title": "Quest rewards are being forwarded straight out",
         "what": "Minds are forwarding their quest reward to another wallet within a day of receiving it.",
-        "why": "A genuine new user spends their quest reward on the platform. Immediately forwarding it means the account exists only to collect.",
-        "do": "Note where the funds are going — the destination is usually the operator's collection wallet.",
+        # Both lines asserted intent — that an account "exists only to collect" and that a
+        # destination belongs to "the operator". Neither is measured: what is measured is a
+        # transfer, its size and how soon it followed the reward. Rule 4.
+        "why": "A genuine new user usually spends their quest reward on the platform. Forwarding it straight out is a different shape, and it is the shape the August accounts had.",
+        "do": "Note where the funds are going. If several accounts forward to the same address, that connection is the thing worth checking — this alert does not say whose address it is.",
         "normal": "A genuine new user spends the quest reward on the platform instead of passing it on.",
     },
     "S-F": {

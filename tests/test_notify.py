@@ -616,6 +616,27 @@ def t_cadence_honesty():
           "MIN_SAMPLES" in w and "int(0.95 * (len(gaps) - 1))" in w)
 
 
+def t_no_intent_claims():
+    """Rule 4: no card may say who did it or why they did it."""
+    print("\nwhat the cards claim about people")
+    import re
+    from notify import explain
+    # Phrases that name an actor or a motive rather than describing a measurement.
+    bad = re.compile(r"\b(the operator's|the operator is|the attacker|the fraudster|"
+                     r"exists only to|means the operator|is stealing|deliberately)\b", re.I)
+    hits = []
+    for sid, card in explain.SIGNALS.items():
+        for field, txt in card.items():
+            m = bad.search(str(txt))
+            if m:
+                hits.append(f"{sid}.{field}: {m.group(0)!r}")
+    check("no signal card asserts who moved the money or why", not hits, "; ".join(hits))
+    # The check has to be able to fail, or it proves nothing: prove it catches the exact
+    # sentence that shipped on S-G until today.
+    check("...and that check would catch the wording that shipped",
+          bool(bad.search("Movement means the operator is active again.")))
+
+
 def t_gate_failure():
     """A red behaviour gate must not be able to take the channel dark in silence."""
     print("\nwhen my own checks fail")
@@ -1235,7 +1256,8 @@ def main():
     for fn in (t_incident, t_charts, t_dead_copy, t_holding, t_alarm, t_post,
                t_replies, t_reply_time,
                t_reply_delivery, t_dead_copy, t_local_send_guard,
-               t_platform_signals_can_speak_twice, t_cadence_honesty, t_gate_failure, t_shadow, t_cluster,
+               t_platform_signals_can_speak_twice, t_cadence_honesty,
+               t_no_intent_claims, t_gate_failure, t_shadow, t_cluster,
                t_owner, t_cut_list, t_selftest,
                t_leaks,
                t_price, t_msglog,
