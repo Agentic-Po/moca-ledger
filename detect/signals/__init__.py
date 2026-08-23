@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import statistics
+import sys
 import datetime as dt
 from dataclasses import dataclass, field, asdict
 
@@ -83,6 +84,7 @@ class Finding:
     view_png: str = None
     detail: str = ""
     escalation: str = ""        # e.g. "confirmed-n100", "tier-up"
+    shadow_of: str = ""         # the tier this WOULD have had if it were not in shadow
 
     @property
     def id(self):
@@ -110,13 +112,70 @@ def register(name, order=50):
 def load_thresholds():
     with open(os.path.join(DETECT, "thresholds.json")) as fh:
         thr = json.load(fh)
+    # Copied to a key the override cannot reach, BEFORE the update below. The env
+    # override is a flat dict.update(), so ANY override naming shadow_signals
+    # REPLACES the committed list rather than adding to it: the plausible-looking
+    # THRESHOLDS_JSON='{"shadow_signals":["INV-10"]}' would ship INV-11 as a live
+    # pager with no commit, no review and no CI run. Reproduced before this line
+    # existed. Going INTO shadow can be done from an env var; coming out is a commit.
+    thr["shadow_floor"] = list(thr.get("shadow_signals") or [])
     env = os.environ.get("THRESHOLDS_JSON")
     if env:
         try:
             thr.update(json.loads(env))
-        except Exception:
-            pass  # bad override never kills the run; defaults stand
+        except Exception as ex:
+            # Never silently (§6.2). The committed defaults are the fail-CLOSED
+            # position — they carry the shadow list — so the run continues on them,
+            # but a malformed override is exactly the case where an operator
+            # believes a shape is shadowed while it is paging, or believes a pager
+            # is live while it is not.
+            thr["thresholds_override_error"] = f"{type(ex).__name__}: {str(ex)[:120]}"
+            print("thresholds: THRESHOLDS_JSON ignored — " + thr["thresholds_override_error"],
+                  file=sys.stderr)
     return thr
+
+
+# Signals that may never be put in shadow, whatever THRESHOLDS_JSON says.
+# Shadow exists for shapes whose normal range has not been measured. Pointed at a
+# measured pager it removes the page that actually bought lead — #10 first paged
+# 18.3 h before the peak with 0 benign fires in 42 days — and #15, #4b, S-F and
+# S-X are what a person must hear at any hour. This list is what stops a blanket
+# "everything except X is shadow" un-pause switch from doing that.
+SHADOW_NEVER = ("10", "11", "15", "4b", "S-F", "S-X")
+
+
+def shadow_signals(thr):
+    """(set of signal ids in shadow, list of ids refused for being measured pagers).
+
+    Refusals are RETURNED rather than dropped so the caller can print and record
+    them: an override that quietly did nothing leaves the operator believing a
+    demotion happened when it did not."""
+    want = thr.get("shadow_signals") or []
+    if isinstance(want, str):
+        want = [w for w in (x.strip() for x in want.split(",")) if w]
+    want = list(thr.get("shadow_floor") or []) + list(want)   # committed list is a FLOOR
+    applied, refused = set(), []
+    for sid in want:
+        v = str(sid).lstrip("#")
+        if v in SHADOW_NEVER:
+            refused.append(v)
+        else:
+            applied.add(v)
+    return applied, refused
+
+
+def shadow_tier(thr, signal, tier):
+    """(tier to act on, tier it would have had) for one finding.
+
+    Shadow is a DEMOTION to digest, never a drop: the finding is still written to
+    alerts/state.json and to incidents/, and still renders in the silent digest
+    under its own heading saying what it would have been (§6.6). It simply cannot
+    page, cannot sound, and cannot open the hot loop."""
+    sid = str(signal or "").lstrip("#")
+    applied, _ = shadow_signals(thr)
+    if sid in applied and tier != "digest":
+        return "digest", tier
+    return tier, ""
 
 
 # ---------------------------------------------------------------- ledger + config loading
@@ -225,6 +284,9 @@ class Ctx:
             if f == TREASURY:
                 self.pay.append((ts, t, v, self.band(v, ts), tx))
         self.equips = [p for p in self.pay if p[3] == "equip"]
+        # Kept beside equips so INV-#10/#11 are the same code shape on a different
+        # band rather than a second implementation that can drift from the first.
+        self.invokes = [p for p in self.pay if p[3] == "invoke"]
 
         base = json.load(open(os.path.join(root, "detect", "baselines.json")))
         self.baselines = base.get("baselines", base)
@@ -315,7 +377,7 @@ class Ctx:
 def evaluate(ctx):
     """Run every registered signal in order; composite (order 90) sees earlier fires."""
     # import all signal modules so they register (idempotent)
-    from . import concentration, burst, worker, fanin, slow_harvest, watchlist, quest, velocity, pause, exit_score, outflow, composite  # noqa: F401
+    from . import concentration, burst, invoke, worker, fanin, slow_harvest, watchlist, quest, velocity, pause, exit_score, outflow, composite  # noqa: F401
     for order, name, fn in sorted(REGISTRY, key=lambda x: x[0]):
         fires = fn(ctx) or []
         for f in fires:

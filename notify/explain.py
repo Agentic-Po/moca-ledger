@@ -140,6 +140,20 @@ SIGNALS = {
         "do": "Normal during a campaign. If there is no campaign running, look at how those accounts were created.",
         "normal": "First-time recipients normally arrive in a trickle through the day, not in a block.",
     },
+    "INV-10": {
+        "title": "One creator is taking an unusual share of the smaller usage rewards",
+        "what": "One creator wallet is receiving far more of the invoke-sized reward payouts than any single creator normally does.",
+        "why": "An invoke pays about a tenth of what an equip pays, so this route moves money roughly ten times more slowly and none of the equip-side checks look at it. A genuinely popular Skill and a Skill being invoked by accounts the same person controls are identical on-chain, and that check has not been made.",
+        "do": "Read this next to the equip-side alerts on the same wallet. On its own it is a new check whose normal range has not been measured on live traffic, so treat it as a lead, not a finding.",
+        "normal": "On the pre-pause ledger the busiest single creator took about a fifth of the invoke-sized payouts in a window like this.",
+    },
+    "INV-11": {
+        "title": "A creator got a burst of the smaller usage rewards in seconds",
+        "what": "A single creator wallet received a run of invoke-sized reward payouts inside one minute.",
+        "why": "A person cannot invoke that many Skills in a minute. On the equip band the same shape is the clearest sign money is leaving the Treasury right now; on the invoke band it is the same shape at a tenth of the value, and it has not been seen often enough to know its normal range.",
+        "do": "Check whether the same wallet has anything open on the equip-side checks. Alone, this is a lead to record, not a reason to wake anyone.",
+        "normal": "The busiest minute any creator had on the pre-pause ledger, outside the August incident, was ten invoke-sized payouts.",
+    },
     "13": {
         "title": "A Mind moved MOCA out to an outside wallet",
         "what": "A Mind sent MOCA to an address that is not part of the platform.",
@@ -166,6 +180,10 @@ TIER_WORD = {
 # The loudest instruction in the message is the one people use. Make it the one
 # that records a decision — not /ack, which was the mute button (council §5).
 REPLY_LINE = "<b>Reply to this message with:</b>  contained · reported · watching · closed"
+
+# The digest's shadow heading, as a constant so a test asserts the exact words the
+# reader sees rather than a paraphrase of them.
+SHADOW_HEADING = "🔭 <b>In shadow — recorded, deliberately not paging</b>"
 
 # HEDGE (defined with the money helpers below) is the one wording every payout
 # and money line in this channel uses.
@@ -268,6 +286,24 @@ def _m_burst(f):                                  # 11
     if not m:
         return None
     return (f"{int(m.group(1))} equip-sized payouts landed on this one creator wallet "
+            f"inside {int(m.group(2))} seconds.")
+
+
+def _m_inv_conc(f):                               # INV-10
+    m = re.search(r"top1=(\d+)%\s*n=(\d+)", str(f.get("detail") or ""))
+    if not m:
+        return None
+    pct, n = int(m.group(1)), int(m.group(2))
+    k = int(round(n * pct / 100.0))
+    return (f"Of {n:,} invoke-sized reward payouts in {_window(f)}, {k:,} — {pct}% — went to "
+            f"this one creator wallet.")
+
+
+def _m_inv_burst(f):                              # INV-11
+    m = re.fullmatch(r"(\d+) in (\d+)s", str(f.get("detail") or "").strip())
+    if not m:
+        return None
+    return (f"{int(m.group(1))} invoke-sized payouts landed on this one creator wallet "
             f"inside {int(m.group(2))} seconds.")
 
 
@@ -401,7 +437,8 @@ def _m_composite(f):                              # composite
 
 MEASURED = {
     "10": _m_conc, "10i": _m_conc, "10n": _m_conc,
-    "11": _m_burst, "15": _m_worker, "4a": _m_m2m, "4b": _m_fanin, "S-C": _m_fanin,
+    "11": _m_burst, "INV-10": _m_inv_conc, "INV-11": _m_inv_burst,
+    "15": _m_worker, "4a": _m_m2m, "4b": _m_fanin, "S-C": _m_fanin,
     "S-A": _m_slow, "S-G": _m_watch, "S-Q": _m_quest, "S-Q2": _m_questpt,
     "S-F": _m_pause, "S-X": _m_balance, "9": _m_newrec, "EV": _m_velocity,
     "13": _m_exit, "composite": _m_composite,
@@ -665,25 +702,67 @@ DIGEST_LINE = {
     "10i": ("One creator took a large share (our own creators included)", "{n} window(s) where a single creator took most of the equip rewards"),
     "9":   ("Many first-time payout recipients", "{n} hour(s) with an unusual number of brand-new wallets paid"),
     "S-X": ("Balances moved in incident-linked wallets", "{n} wallet(s) changed balance"),
+    "INV-10": ("One creator is taking an unusual share of the smaller usage rewards",
+               "{n} window(s) where one creator took most of the invoke-sized payouts"),
+    "INV-11": ("A creator got a burst of the smaller usage rewards in seconds",
+               "{n} burst(s) of invoke-sized payouts inside a minute"),
 }
 
 
+def _digest_block(items, sig):
+    """One signal's lines inside the digest."""
+    title, tmpl = DIGEST_LINE.get(sig, (SIGNALS.get(sig, FALLBACK)["title"], "{n} event(s)"))
+    out = [f"<b>{title}</b>", f"   {tmpl.format(n=len(items))}"]
+    biggest = max(items, key=lambda x: len(str(x.get("detail") or "")))
+    if biggest.get("detail"):
+        out.append(f"   e.g. {measured(biggest)}")
+    out.append("")
+    return out
+
+
 def digest(findings):
-    """One silent, readable summary instead of a list of codes."""
+    """One silent, readable summary instead of a list of codes.
+
+    Findings held in shadow are separated out and named. They DID cross a level
+    that would otherwise alert, so the standing line below — "nothing here crossed
+    a level that asks for a decision" — would be a false all-clear printed over
+    them (§6.3, §6.6). Being a new and unmeasured check is a reason not to wake
+    someone; it is never a reason not to say the thing happened.
+    """
     import collections
-    groups = collections.OrderedDict()
-    for f in findings:
-        groups.setdefault(str(f.get("signal", "")).lstrip("#"), []).append(f)
-    lines = ["📋 <b>For the record</b>",
-             "<i>Nothing here crossed a level that asks for a decision today. "
-             "These are counts, not clearances.</i>", ""]
-    for sig, items in groups.items():
-        title, tmpl = DIGEST_LINE.get(sig, (SIGNALS.get(sig, FALLBACK)["title"], "{n} event(s)"))
-        lines.append(f"<b>{title}</b>")
-        lines.append(f"   {tmpl.format(n=len(items))}")
-        biggest = max(items, key=lambda x: len(str(x.get("detail") or "")))
-        if biggest.get("detail"):
-            lines.append(f"   e.g. {measured(biggest)}")
-        lines.append("")
+    shadow = [f for f in findings if f.get("shadow_of")]
+    plain = [f for f in findings if not f.get("shadow_of")]
+    lines = ["📋 <b>For the record</b>", ""]
+    if shadow:
+        by = collections.OrderedDict()
+        for f in shadow:
+            by.setdefault(str(f.get("signal", "")).lstrip("#"), []).append(f)
+        lines += [SHADOW_HEADING,
+                  "<i>These crossed a level that would normally alert. They are new checks "
+                  "whose normal range has not been measured on live traffic yet, so they are "
+                  "written down instead of waking anyone. That is a decision about the check, "
+                  "not a judgement that the activity is harmless — it is not an all-clear.</i>",
+                  ""]
+        for sig, items in by.items():
+            would = str(items[0].get("shadow_of") or "alert")
+            lines += _digest_block(items, sig)[:2]
+            lines.append(f"   would have been a <b>{would}</b> if this check were live")
+            biggest = max(items, key=lambda x: len(str(x.get("detail") or "")))
+            if biggest.get("detail"):
+                lines.append(f"   e.g. {measured(biggest)}")
+            lines.append("")
+    if plain:
+        groups = collections.OrderedDict()
+        for f in plain:
+            groups.setdefault(str(f.get("signal", "")).lstrip("#"), []).append(f)
+        # "The rest of this list" is only true when a shadow block precedes it. On the
+        # ordinary day — nothing in shadow, which is most days — it opened the most-read
+        # message in the channel with a clause referring to nothing above it.
+        opener = ("The rest of this list crossed no level" if shadow
+                  else "Nothing here crossed a level")
+        lines += [f"<i>{opener} that asks for a decision today. "
+                  "These are counts, not clearances.</i>", ""]
+        for sig, items in groups.items():
+            lines += _digest_block(items, sig)
     lines.append("<i>/cases shows everything still waiting on a person.</i>")
     return "\n".join(lines)

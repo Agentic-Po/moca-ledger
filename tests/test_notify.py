@@ -603,9 +603,64 @@ def t_prune():
           (out.get("retired_notice") or {}).get("total", 0) > 0, str(out.get("retired_notice")))
 
 
+def t_shadow():
+    print("\nshadow mode")
+    from notify import explain
+
+    # A finding in shadow is a digest line: it must not page, must not sound, and
+    # must not count toward the loud queue that puts the channel into incident mode.
+    sh = _finding(60, tier="digest", signal="INV-10", shadow_of="page",
+                  detail="top1=92% n=126", window="6h")
+    s, sent = run(Bed([sh]))
+    check("a shadowed finding sends nothing loud", sent and all(x["silent"] for x in sent),
+          f"{sum(1 for x in sent if not x['silent'])} loud of {len(sent)}")
+    check("a shadowed finding is not held as a loud arrival",
+          (s.get("loud_held") or 0) == 0, str(s.get("loud_held")))
+    check("a shadowed finding still reaches the channel",
+          any(explain.SHADOW_HEADING in x["text"] for x in sent))
+
+    s2, _ = run(Bed([_finding(61 + i, tier="digest", signal="INV-10", shadow_of="page",
+                              detail=f"top1=9{i}% n=126") for i in range(6)]))
+    check("six shadowed findings do not open incident mode", not s2.get("incident"),
+          str(bool(s2.get("incident"))))
+
+    body = explain.digest([dict(sh), {"signal": "13", "detail": "score 0.7"}])
+    check("the digest names the shadowed check and what it would have been",
+          explain.SHADOW_HEADING in body and "would have been a <b>page</b>" in body)
+    check("the 'crossed no level' line is not printed over a shadowed finding",
+          body.index(explain.SHADOW_HEADING) < body.index("crossed no level"))
+    check("a digest with nothing in shadow does not print the shadow heading",
+          explain.SHADOW_HEADING not in explain.digest([{"signal": "13", "detail": "score 0.7"}]))
+
+    # ---- the demotion itself, at the detector end of the pipe
+    sys.path.insert(0, str(ROOT / "detect"))
+    import signals as SG
+    check("shadow demotes to digest and remembers the tier it would have had",
+          SG.shadow_tier({"shadow_signals": ["INV-10"]}, "INV-10", "page") == ("digest", "page"))
+    check("shadow refuses to demote a measured pager",
+          SG.shadow_signals({"shadow_signals": ["10", "INV-10"]}) == ({"INV-10"}, ["10"]))
+    prev = os.environ.get("THRESHOLDS_JSON")
+    os.environ["THRESHOLDS_JSON"] = "{not json"
+    try:
+        thr = SG.load_thresholds()
+    finally:
+        if prev is None:
+            os.environ.pop("THRESHOLDS_JSON", None)
+        else:
+            os.environ["THRESHOLDS_JSON"] = prev
+    check("a malformed THRESHOLDS_JSON leaves the committed shadow list standing",
+          {"INV-10", "INV-11"} <= SG.shadow_signals(thr)[0], str(sorted(SG.shadow_signals(thr)[0])))
+    check("a malformed THRESHOLDS_JSON is recorded, not swallowed",
+          bool(thr.get("thresholds_override_error")), str(thr.get("thresholds_override_error")))
+    ok = SG.load_thresholds()
+    check("a run with no override records no override error",
+          ok.get("thresholds_override_error") is None)
+
+
 def main():
     for fn in (t_incident, t_holding, t_alarm, t_post, t_replies, t_reply_time,
-               t_reply_delivery, t_dead_copy, t_gate_failure, t_leaks, t_price, t_msglog,
+               t_reply_delivery, t_dead_copy, t_gate_failure, t_shadow, t_leaks,
+               t_price, t_msglog,
                t_merge, t_prune):
         fn()
     bad = [n for ok, n, _ in RESULTS if not ok]

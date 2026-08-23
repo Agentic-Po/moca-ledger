@@ -26,7 +26,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "detect"))
 
-from signals import Ctx, evaluate, ts_of, utc  # noqa: E402
+from signals import Ctx, evaluate, shadow_signals, shadow_tier, ts_of, utc  # noqa: E402
+from signals.composite import MEMBERS as COMPOSITE_MEMBERS  # noqa: E402
 from signals import slow_harvest  # noqa: E402  (G5 re-runs this one signal on its own)
 
 FAILS = []
@@ -130,6 +131,56 @@ def main():
     short, long = sa_max_thr(days=d1), sa_max_thr(days=2 * d1)
     check("G5 doubling the baseline window does not raise the bar", long <= 1.25 * short,
           f"bar {short} at {d1} d vs {long} at {2 * d1} d")
+
+    # ---- G5 shadow mode. INV-#10/#11 are the #10/#11 shapes on the invoke band and
+    # are uncalibrated: every fire either of them produces on this ledger belongs to
+    # ONE creator the private label file classes benign, and invoke rewards have been
+    # paused since 21 Aug, so there is no traffic to re-measure on. They must reach
+    # the channel as digest lines and never as pages.
+    applied, _refused = shadow_signals(ctx.thr)
+    check("G5 the committed defaults put INV-10 and INV-11 in shadow",
+          {"INV-10", "INV-11"} <= applied, ",".join(sorted(applied)) or "none")
+    check("G5 a measured pager cannot be put in shadow by an override",
+          shadow_signals({"shadow_signals": ["10", "11", "15", "4b", "S-F", "S-X", "INV-10"]})
+          == ({"INV-10"}, ["10", "11", "15", "4b", "S-F", "S-X"]),
+          str(shadow_signals({"shadow_signals": ["10", "INV-10"]})))
+    check("G5 a shadowed page is demoted to digest and remembers what it was",
+          shadow_tier(ctx.thr, "INV-10", "page") == ("digest", "page"),
+          str(shadow_tier(ctx.thr, "INV-10", "page")))
+    check("G5 a signal that is not in shadow is left alone",
+          shadow_tier(ctx.thr, "10", "page") == ("page", ""))
+    check("G5 a shadowed signal cannot page through the composite rule",
+          not (applied & COMPOSITE_MEMBERS), ",".join(sorted(applied & COMPOSITE_MEMBERS)))
+
+    inv = ctx.fires.get("INV-10", []) + ctx.fires.get("INV-11", [])
+    leaked = [f for f in inv if shadow_tier(ctx.thr, f.signal, f.tier)[0] != "digest"]
+    check("G5 no invoke-band fire reaches the channel above digest", not leaked,
+          f"{len(leaked)} of {len(inv)} would page")
+    pre = [f for f in inv if f.ts < ts_of("2026-08-19T00:00")]
+    check("G5 neither invoke-band signal fires in the 44 days before the incident",
+          not pre, f"{len(pre)} fire(s) before 2026-08-19")
+    check("G5 both invoke-band signals fired on the incident",
+          bool(ctx.fires.get("INV-10")) and bool(ctx.fires.get("INV-11")),
+          f"INV-10 {len(ctx.fires.get('INV-10', []))}, INV-11 {len(ctx.fires.get('INV-11', []))}")
+    check("G5 an override cannot LIFT a signal out of the committed shadow list",
+          {"INV-10", "INV-11"} <= shadow_signals(dict(ctx.thr, shadow_signals=["INV-10"]))[0],
+          str(sorted(shadow_signals(dict(ctx.thr, shadow_signals=["INV-10"]))[0])))
+
+    # ---- G5 the demotion must be applied by the PIPELINE, not merely be available as
+    # a helper. Every check above is satisfied by the helper alone: deleting the one
+    # line in run.py that calls shadow_tier() leaves them all green while INV-10 goes
+    # back to tier "page" in alerts/state.json. Runs LAST in this block because
+    # current_findings() rewrites Finding.tier on ctx.fires in place.
+    import run as RUN  # noqa: E402  (detect/ is on sys.path from the header)
+    reduced = list(RUN.current_findings(ctx).values())
+    shadowed = [f for f in reduced if str(f.signal).lstrip("#") in applied]
+    leaked2 = [f for f in shadowed if f.to_state().get("tier") != "digest"]
+    check("G5 run.py demotes every shadowed finding before it is written to state",
+          bool(shadowed) and not leaked2,
+          f"{len(leaked2)} of {len(shadowed)} still above digest in state")
+    check("G5 a demoted finding records in state the tier it would have had",
+          all(f.to_state().get("shadow_of") == "page" for f in shadowed),
+          str(sorted({f.to_state().get("shadow_of") for f in shadowed})))
 
     # ---- G2 parity: run.py --as-of == replay.py per signal
     as_of = ctx.as_of_block

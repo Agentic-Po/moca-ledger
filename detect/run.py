@@ -64,6 +64,11 @@ def current_findings(ctx):
                        key=lambda x: (TIER_RANK.get(x.tier, 0), x.ts))
             f = best if TIER_RANK.get(best.tier, 0) > TIER_RANK.get(f.tier, 0) else f
             f.tier = max_tier
+            # Shadow is applied HERE, on the Finding, not later on the state dict:
+            # write_incident() renders from the Finding, so demoting only the state
+            # copy would leave incidents/<...>/finding.json claiming "page" for a
+            # finding the channel handled as a digest line.
+            f.tier, f.shadow_of = S.shadow_tier(ctx.thr, f.signal, f.tier)
             prev = out.get(f.id)
             if prev is None or f.ts >= prev.ts:
                 d = f.to_state()
@@ -249,6 +254,7 @@ def write_incident(f, ctx):
 
 
 def heartbeat(ctx, state, ok=True):
+    shadow_now = S.shadow_signals(ctx.thr)
     hb = {}
     if os.path.exists(HEARTBEAT):
         try:
@@ -274,6 +280,11 @@ def heartbeat(ctx, state, ok=True):
             "digest": sum(1 for v in open_f if v.get("tier") == "digest"),
         },
         "fires_last_24h_total": sum(per_day.values()) if isinstance(per_day, dict) else per_day,
+        # Which shapes are muted, in the file the un-pause runbook reads. A shadow
+        # nobody can see from outside is indistinguishable from a signal that died.
+        "shadow_signals": sorted(shadow_now[0]),
+        "shadow_refused": shadow_now[1],
+        "thresholds_override_error": ctx.thr.get("thresholds_override_error"),
         "outflow_x_now": getattr(ctx, "outflow_x", {}).get(ctx.s1),
     })
     with open(HEARTBEAT, "w") as fh:
@@ -303,6 +314,14 @@ def write_public_state(state, ctx):
 
 def one_pass(a):
     ctx = Ctx(root=ROOT, as_of_block=a.as_of, data_dir=a.data)
+    shadow, refused = S.shadow_signals(ctx.thr)
+    if refused:
+        # Not a config nit: somebody tried to demote a pager with 0 benign fires in
+        # 42 days, and the run must not look like it complied.
+        print("thresholds: REFUSED to shadow " + ",".join(refused)
+              + " — measured pagers cannot be demoted by an override", file=sys.stderr)
+    if shadow:
+        print(f"shadow: {len(shadow)} signal(s) recorded and digested, never paged")
     evaluate(ctx)
     if a.parity_json:
         with open(a.parity_json, "w") as fh:
