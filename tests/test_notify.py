@@ -657,6 +657,136 @@ def t_msglog():
           "alerts/msglog/" in (ROOT / ".gitignore").read_text())
 
 
+# ---------------------------------------------------------------- the daily self-test
+
+def t_selftest():
+    """notify/selftest.py is the only thing that proves the LIVE path once a day, and
+    nothing proved it in turn. These are the properties that stop it becoming the
+    outage it exists to catch — plus the fact that decides what it may exercise
+    live at all."""
+    print("\nthe daily self-test")
+    from notify import selftest
+
+    owner = selftest._escalation_owner()
+    page = telegram.render(selftest.synthetic_finding("page"))
+    check("the self-test's page finding renders as a page, not as a notify",
+          "\U0001f6a8" in page and "Needs attention now" in page)
+    # "UNASSIGNED" counts as carrying it: a page that admits nobody is named is honest.
+    # A page that carries neither has silently dropped the line phase3 §1.2 requires.
+    check("the self-test's page copy still carries an escalation contact",
+          owner in page or "UNASSIGNED" in page, page[-90:].replace("\n", " "))
+
+    # The live page leg only exercises the twin photo+text path while its banner is
+    # longer than a caption; below that the chart rides in the caption and the branch is
+    # never executed. Trimming the copy must fail HERE rather than silently downgrade the
+    # daily check to the single-message path leg 2 already covers.
+    check("the page banner is long enough to force the twin photo+text path",
+          len(selftest.PAGE_BANNER) > telegram.CAPTION_MAX,
+          f"{len(selftest.PAGE_BANNER)} chars vs caption max {telegram.CAPTION_MAX}")
+    for name, text in (("notify", selftest.BANNER), ("page", selftest.PAGE_BANNER)):
+        check(f"the {name} self-test message says what it is in its first line",
+              "SELF-TEST" in text.split("\n")[0], text.split("\n")[0][:60])
+        # A screenshot of a self-test that reads like a live page forwards as one, and
+        # deleteMessage recalls nothing that was already forwarded.
+        check(f"the {name} self-test message is not shaped like a real alert",
+              "Needs attention now" not in text and "Reply to this message" not in text)
+
+    # Isolation. send_pending() writes `incident` into whatever telegram.STATE points at,
+    # and an incident left in the LIVE state sends six hours of real alerts silently,
+    # under a header nobody received.
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="moca-selftest-t")) / "state.json"
+    check("the self-test refuses to send while the live state file is the target",
+          selftest._isolation_ok(state_sync.STATE) is False)
+    before = (telegram.STATE, telegram.render, telegram.send, telegram._log_out)
+    with selftest._isolated(tmp, "\U0001f9ea SELF-TEST", []) as tg:
+        inside = (tg.STATE == tmp, selftest._isolation_ok(tmp),
+                  tg.render({}) == "\U0001f9ea SELF-TEST")
+    check("the self-test writes to its own state file, never the live one",
+          inside == (True, True, True), str(inside))
+    check("and the real sender is put back afterwards",
+          (telegram.STATE, telegram.render, telegram.send, telegram._log_out) == before)
+    # Not `_live_state_bytes() == STATE.read_bytes()` — that re-implements the function
+    # and compares it to its own body, which is true however broken it is. What has to
+    # hold is that the fingerprint MOVES when the real file moves and holds when it
+    # does not, because the CLEAN leg's whole claim rests on comparing it before and
+    # after a live send.
+    keep = state_sync.STATE
+    try:
+        tmp = pathlib.Path(tempfile.mkdtemp()) / "state.json"
+        state_sync.STATE = tmp
+        tmp.write_text('{"open": {}}')
+        a = selftest._live_state_bytes()
+        b = selftest._live_state_bytes()
+        tmp.write_text('{"open": {"x": 1}}')
+        c = selftest._live_state_bytes()
+        tmp.unlink()
+        d = selftest._live_state_bytes()
+        check("the live-state fingerprint is stable while the file is", a == b and a is not None)
+        check("the live-state fingerprint changes when the real file changes", c != a)
+        check("a missing live state is not mistaken for an unchanged one", d != c)
+    finally:
+        state_sync.STATE = keep
+
+    # Sound cannot be proven live without pinging every phone in the group nightly, so
+    # the self-test records the ask and refuses it. That is only worth something if the
+    # recording and the refusal both work.
+    asked, posted = [], []
+    o_send = telegram.send
+    try:
+        telegram.send = lambda text, photo=None, silent=False: (
+            posted.append((text, silent)) or {"ok": True, "result": {"message_id": 77}})
+        with selftest._isolated(tmp, "\U0001f9ea SELF-TEST", asked) as tg:
+            tg.send("x", silent=False)
+    finally:
+        telegram.send = o_send
+    check("the self-test records the sound the send path asked for", asked == [False], str(asked))
+    check("...and refuses it, so the group is not pinged nightly",
+          bool(posted) and posted[0][1] is True, str(posted))
+
+    # The chart is a REPLY to the text message. Delete the parent first and the chart is
+    # left quoting a message that is no longer there.
+    deleted, notes = [], []
+    o_post, o_send, o_log = telegram._post, telegram.send, telegram._log_out
+    try:
+        telegram._log_out = lambda *a, **k: None
+        telegram.send = lambda text, photo=None, silent=False: (
+            notes.append(text) or {"ok": True, "result": {"message_id": 1}})
+        telegram._post = lambda m, d=None, files=None: (
+            deleted.append(d.get("message_id")) or {"ok": True})
+        gone = selftest.delete_messages([120, 121])
+        check("both halves of the twin are deleted", sorted(deleted) == [120, 121], str(deleted))
+        check("the chart is deleted before the message it replies to",
+              deleted == [121, 120], str(deleted))
+        check("a clean deletion says nothing in the channel",
+              gone is True and not notes, str(notes))
+
+        deleted.clear(); notes.clear()
+        telegram._post = lambda m, d=None, files=None: (
+            deleted.append(d.get("message_id")) or {"ok": False, "error": "message can't be deleted"})
+        stuck = selftest.delete_messages([120, 121])
+        check("a refused deletion is explained in the channel, once",
+              stuck is False and len(notes) == 1, str(notes)[:80])
+        check("the explanation names every message it could not remove",
+              bool(notes) and "120" in notes[0] and "121" in notes[0],
+              notes[0][:110] if notes else "")
+    finally:
+        telegram._post, telegram.send, telegram._log_out = o_post, o_send, o_log
+
+    # Why incident mode is proven HERE and never by the live self-test: the header is
+    # built inside send_pending() and never passes through telegram.render, so the banner
+    # substitution that keeps every other self-test message honest cannot reach it. A live
+    # incident leg would post "Incident mode" into the real channel, silent or not.
+    o_render = telegram.render
+    try:
+        telegram.render = lambda _f: selftest.BANNER
+        _, sent = run(Bed([_finding(i, signal=str(10 + i)) for i in range(5)]))
+    finally:
+        telegram.render = o_render
+    check("stubbing the renderer does NOT stop an incident header reaching the channel",
+          bool(sent) and "Incident mode" in sent[0]["text"],
+          sent[0]["text"][:48] if sent else "nothing sent")
+
+
 # ---------------------------------------------------------------- concurrency
 
 def t_merge():
@@ -1026,7 +1156,7 @@ def main():
     for fn in (t_incident, t_charts, t_dead_copy, t_holding, t_alarm, t_post,
                t_replies, t_reply_time,
                t_reply_delivery, t_dead_copy, t_local_send_guard, t_gate_failure, t_shadow, t_cluster,
-               t_owner, t_cut_list,
+               t_owner, t_cut_list, t_selftest,
                t_leaks,
                t_price, t_msglog,
                t_merge, t_prune):
