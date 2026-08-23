@@ -215,6 +215,8 @@ def _chunks(text, limit):
 INCIDENT_TTL_S = 6 * 3600          # six quiet hours ends an incident
 INCIDENT_SHOW = 6                  # same cap the loud path already applies
 CASHOUT_KEEP  = 20                 # cash-out destinations remembered per incident
+SENDS_KEEP    = 2                  # (sent_at, value) pairs per finding — enough to answer
+                                   # "what did the reader see when they typed this?"
 
 
 def _thresholds():
@@ -625,6 +627,14 @@ def send_pending():
                      "run's ping.</i>")
         r = send(body, photo=f.get("view_png"), silent=silent)
         f["send_ok"] = bool(r.get("ok")); f["send_error"] = None if r.get("ok") else str(r.get("error"))[:80]
+        if r.get("ok"):
+            # What the reader was actually looking at, and when. A person replies to
+            # an ALERT, not to the state file, and their reply is read up to an hour
+            # later; stamping the baseline from the value at poll time folded the
+            # growth they never saw into the number their "contained" is judged
+            # against (fix-round critic #5). Two entries, newest first: a re-fire can
+            # land between the reply being typed and the reply being read.
+            f["sends"] = ([[int(time.time()), f.get("value")]] + (f.get("sends") or []))[:SENDS_KEEP]
         mid = (r.get("result") or {}).get("message_id")
         if mid:
             f["tg_message_id"] = mid

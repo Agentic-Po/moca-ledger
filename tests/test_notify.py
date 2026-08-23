@@ -9,7 +9,7 @@ sender is stubbed and every state file is a temporary one.
 
 Usage:  python3 tests/test_notify.py        (exit 1 on any failure)
 """
-import json, pathlib, re, sys, tempfile, time, urllib.error, io, datetime as dt
+import json, os, pathlib, re, sys, tempfile, time, urllib.error, io, datetime as dt
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -293,6 +293,69 @@ def t_replies():
           "lag" not in st and "rows" not in st and "mindset" not in st)
 
 
+def t_reply_time():
+    """A decision is stamped from when the person typed it, not when we read it."""
+    print("\nthe baseline a human decision is judged against")
+    typed = int(dt.datetime(2026, 8, 23, 2, 20, tzinfo=dt.UTC).timestamp())
+    alert = typed - 900            # the alert they were replying to: value 100
+    later = typed + 1800           # a re-fire that landed while the reply sat unread
+
+    f = {"id": "c1", "key": "0x" + "a" * 40, "value": 900.0,
+         "sends": [[later, 900.0], [alert, 100.0]]}
+    s = {"open": {f["key"]: f}}
+    commands.set_status(s, "c1", "contained", "u1", "wallet restricted", when=typed)
+    check("status_ts is the moment the reply was sent, not the moment it was read",
+          f["status_ts"].startswith("2026-08-23T02:20"), f["status_ts"])
+    check("the baseline is the value the reader was actually looking at",
+          f["value_at_status"] == 100.0, str(f["value_at_status"]))
+    check("a re-fire during the polling gap is not folded into the baseline",
+          f["value_at_status"] != 900.0)
+
+    # explain.py must now describe the growth the reader did NOT see.
+    from notify import explain
+    words = explain._grew_words(f)
+    check("the reader is told it grew, not that it is about the same level",
+          "9.0×" in words or "9.0\u00d7" in words, words)
+
+    # No send history (a finding from before this existed) still records something.
+    g = {"id": "c2", "key": "0x" + "b" * 40, "value": 42.0}
+    commands.set_status({"open": {g["key"]: g}}, "c2", "reported", "u1", "", when=None)
+    check("a finding with no send history falls back to the live value",
+          g["value_at_status"] == 42.0)
+    check("a missing message.date falls back to now, it does not crash",
+          g["status_ts"][:4] == "20" + str(dt.datetime.now(dt.UTC).year)[2:])
+
+
+def t_reply_delivery():
+    """An undelivered reply must not be a green run."""
+    print("\nan answer that never arrived")
+    real_api, real_chat = commands.api, commands.CHAT
+    try:
+        commands.api = lambda method, **p: {"ok": False, "error": "http 400 can't parse entities"}
+        commands.CHAT = lambda: "-100"
+        commands.UNDELIVERED.clear()
+        check("reply() reports failure", commands.reply("hello", 1) is False)
+        check("a failed reply is recorded for main() to act on", len(commands.UNDELIVERED) == 1)
+        commands.UNDELIVERED.clear()
+
+        # `/close a<b>c` names no case, so the bot echoes what was typed. Unescaped,
+        # that is a 400 "can't parse entities" that api() swallows, and the channel
+        # goes silent on a green run.
+        seen = []
+        commands.api = lambda method, **p: (seen.append(p.get("text", "")) or {"ok": True, "result": {}})
+        os.environ["TELEGRAM_ACK_USER_IDS"] = "999"
+        commands.handle({"open": {}, "telegram_offset": 0},
+                        {"text": "/close a<b>c", "message_id": 5, "chat": {"id": "-100"},
+                         "from": {"id": "999"}})
+        echoed = "\n".join(seen)
+        check("the bot echoed the unmatched id back", "a&lt;b&gt;c" in echoed, echoed[:90])
+        check("raw user input never re-enters HTML as markup", "a<b>c" not in echoed)
+    finally:
+        commands.api, commands.CHAT = real_api, real_chat
+        os.environ.pop("TELEGRAM_ACK_USER_IDS", None)
+        commands.UNDELIVERED.clear()
+
+
 # ---------------------------------------------------------------- leaks
 
 def t_leaks():
@@ -350,7 +413,8 @@ def t_prune():
 
 
 def main():
-    for fn in (t_incident, t_holding, t_alarm, t_post, t_replies, t_leaks, t_merge, t_prune):
+    for fn in (t_incident, t_holding, t_alarm, t_post, t_replies, t_reply_time,
+               t_reply_delivery, t_leaks, t_merge, t_prune):
         fn()
     bad = [n for ok, n, _ in RESULTS if not ok]
     print(f"\nnotify: {'FAIL — ' + str(len(bad)) + ' check(s)' if bad else 'OK — all ' + str(len(RESULTS)) + ' checks green'}")

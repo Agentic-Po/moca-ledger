@@ -42,8 +42,17 @@ def _chunks(text, limit=3800):
     return out or [""]
 
 
+UNDELIVERED = []      # replies Telegram refused this run — see main()
+
+
 def reply(text, to=None):
-    """Send, in as many messages as it takes, and report whether it arrived."""
+    """Send, in as many messages as it takes, and report whether it arrived.
+
+    Every one of the ~15 call sites used to throw this result away, so a reply that
+    404'd or 400'd left handle() returning 0, main() returning 0 and the run GREEN,
+    while the person who typed it got nothing at all (fix-round critic #6). Recording
+    it here rather than at each call site is deliberate: a new call site cannot forget.
+    Callers that want to branch still can — the return value is unchanged."""
     ok = True
     for chunk in _chunks(text):
         p = {"chat_id": CHAT(), "text": chunk, "parse_mode": "HTML", "disable_notification": "true"}
@@ -53,6 +62,8 @@ def reply(text, to=None):
             ok = False
             print(f"commands: reply NOT delivered ({r.get('error')}) — "
                   f"the person who asked got nothing", file=sys.stderr)
+    if not ok:
+        UNDELIVERED.append({"reply_to": to, "starts": str(text)[:60]})
     return ok
 
 def _deny(uid, mid):
@@ -126,19 +137,55 @@ STATUSES = {
 }
 
 
-def set_status(s, ident, status, uid, note=""):
+def _sent_at(when):
+    """The moment the person actually typed it. `when` is Telegram's `message.date`.
+
+    Replies are read by a poll that runs every ten minutes and has been measured at
+    p95 56 min. Stamping the decision from the poll instead of from the message
+    credited the detector with everything that happened in between: run.py gates the
+    "still growing since you contained it" escalation on 1.5x of `value_at_status`,
+    so a baseline inflated by an unseen hour needs 1.5x of an already-grown number
+    before it fires, and explain.py then tells the reader "about the same level as
+    when you contained it" about a period they never saw (fix-round critic #5)."""
+    try:
+        return dt.datetime.fromtimestamp(int(when), dt.UTC)
+    except (TypeError, ValueError):
+        return dt.datetime.now(dt.UTC)
+
+
+def _value_as_of(f, at):
+    """The value the alert this person was looking at actually carried.
+
+    telegram.py stamps `sends` as [[unix_ts, value], ...], newest first, on every
+    delivered alert. Pick the most recent send at or before the reply; falling back
+    to the live value only when there is no send history (a pre-`sends` finding)."""
+    try:
+        cutoff = int(at.timestamp())
+    except Exception:
+        cutoff = None
+    for row in (f.get("sends") or []):
+        try:
+            ts, val = int(row[0]), row[1]
+        except (TypeError, ValueError, IndexError):
+            continue
+        if cutoff is None or ts <= cutoff:
+            return val
+    return f.get("value")
+
+
+def set_status(s, ident, status, uid, note="", when=None):
     k, f = find(s, ident)
     if not f: return None, None
-    now = dt.datetime.now(dt.UTC)
+    at = _sent_at(when)
     f["status"] = status
-    f["status_ts"] = now.isoformat()
+    f["status_ts"] = at.isoformat()
     f["status_by"] = uid
     f["status_note"] = note[:300]
-    f["value_at_status"] = f.get("value")
+    f["value_at_status"] = _value_as_of(f, at)
     f["pending_send"] = False
     if status in ("reported", "contained", "closed", "watching"):
         f["ack_by"] = f.get("ack_by") or uid          # stops the routine repeat
-        f["ack_ts"] = f.get("ack_ts") or now.isoformat()
+        f["ack_ts"] = f.get("ack_ts") or at.isoformat()
     return k, f
 
 
@@ -271,6 +318,16 @@ def main():
                 pass
     save(s)
     print(f"commands: {len(ups)} update(s), {changed} state change(s)")
+    if UNDELIVERED:
+        # The state change (if any) is saved above on purpose — the decision the
+        # person made is real even when the confirmation of it did not land. What
+        # must NOT happen is the run reporting green while somebody is waiting for
+        # an answer that Telegram refused.
+        for u in UNDELIVERED:
+            print(f"commands: undelivered reply to message {u['reply_to']}: {u['starts']!r}",
+                  file=sys.stderr)
+        print(f"commands: {len(UNDELIVERED)} reply/replies NOT delivered — the run is RED")
+        return 3
     return 0
 
 
@@ -369,7 +426,7 @@ def handle(s, m):
             return 0
         if not allowed:
             deny(); return 0
-        set_status(s, rf.get("id"), st, uid, text[:300])
+        set_status(s, rf.get("id"), st, uid, text[:300], when=m.get("date"))
         icon, meaning = STATUSES.get(st, ("\U0001f440", ""))
         extra = {"reported": "I will stay quiet unless it keeps growing.",
                  "contained": "Any further activity will page you \u2014 that would mean the fix did not hold.",
@@ -414,14 +471,14 @@ def handle(s, m):
         if cmd == "/reopen":
             k, f = find(s, args[0])
             if not f:
-                reply(f"no case matching <code>{args[0]}</code>", mid); return 0
+                reply(f"no case matching <code>{_esc(args[0])}</code>", mid); return 0
             for fld in ("status", "status_ts", "status_note", "ack_by", "ack_ts", "value_at_status"):
                 f.pop(fld, None)
             reply(f"\u21a9\ufe0f reopened <code>{f.get('id')}</code> \u2014 it will alert again if it fires", mid)
         else:
-            k, f = set_status(s, args[0], st, uid, " ".join(args[1:]))
+            k, f = set_status(s, args[0], st, uid, " ".join(args[1:]), when=m.get("date"))
             if not f:
-                reply(f"no case matching <code>{args[0]}</code>", mid); return 0
+                reply(f"no case matching <code>{_esc(args[0])}</code>", mid); return 0
             icon, meaning = STATUSES[st]
             extra = {"reported": "I will stay quiet unless it keeps growing.",
                      "contained": "Any further activity from now on pages you \u2014 that would mean the fix did not hold.",
@@ -434,7 +491,7 @@ def handle(s, m):
             deny(); return 0
         k, f = find(s, args[0])
         if not f:
-            reply(f"no open finding matching <code>{args[0]}</code>", mid); return 0
+            reply(f"no open finding matching <code>{_esc(args[0])}</code>", mid); return 0
         now = dt.datetime.now(dt.UTC)
         if cmd == "/ack":
             f["ack_by"] = uid; f["ack_ts"] = now.isoformat()
@@ -450,7 +507,7 @@ def handle(s, m):
             deny(); return 0
         sig = args[0]
         gone = (s.get("muted") or {}).pop(sig, None)
-        reply(f"\U0001f50a <b>{sig}</b> is not muted" + (" any more." if gone else " \u2014 nothing to clear."), mid)
+        reply(f"\U0001f50a <b>{_esc(sig)}</b> is not muted" + (" any more." if gone else " \u2014 nothing to clear."), mid)
         return 1 if gone else 0
     elif cmd == "/mute":
         reply("\u26a0\ufe0f <code>/mute</code> is gone. It muted a whole signal for everyone at "

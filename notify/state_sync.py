@@ -216,7 +216,7 @@ def merge(remote, local):
         if rf.get("status") and not lf.get("status"):
             for fld in HUMAN_FIELDS:
                 if fld in rf: cur[fld] = rf[fld]
-        for fld in ("ack_by", "ack_ts", "enrich_requested", "tg_message_id"):
+        for fld in ("ack_by", "ack_ts", "enrich_requested", "tg_message_id", "sends"):
             if rf.get(fld) and not cur.get(fld): cur[fld] = rf[fld]
         if rf.get("last_sent") and not cur.get("last_sent"):
             cur["last_sent"] = rf["last_sent"]; cur["pending_send"] = False

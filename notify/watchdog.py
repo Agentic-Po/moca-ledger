@@ -39,13 +39,22 @@ def main():
             alerts.append(("lag", f"⏳ <b>ledger behind tip</b>\n{hb.get('lag_blocks')} blocks — crawler running but not keeping up"))
     except Exception:
         pass
-    fired = 0
+    fired, lost = 0, 0
     for key, msg in alerts:
         if now - float(last.get(key, 0)) < DEDUP_H * 3600: continue
-        send(msg); last[key] = now; fired += 1
+        # Only a DELIVERED alert starts the six-hour dedupe. Recording the attempt
+        # meant an undelivered "ledger behind tip" was announced to nobody and then
+        # suppressed for six hours, on a green run (fix-round critic #6).
+        r = send(msg)
+        if r.get("ok"):
+            last[key] = now; fired += 1
+        else:
+            lost += 1
+            print(f"watchdog: {key} NOT delivered ({r.get('error')}) — not deduped, "
+                  f"it will be tried again next run", file=sys.stderr)
     s["watchdog"] = last
     STATE.write_text(json.dumps(s, indent=1))
-    print(f"watchdog: {len(alerts)} condition(s), {fired} sent")
-    return 0
+    print(f"watchdog: {len(alerts)} condition(s), {fired} sent" + (f", {lost} undelivered" if lost else ""))
+    return 3 if lost else 0
 
 if __name__ == "__main__": sys.exit(main())
