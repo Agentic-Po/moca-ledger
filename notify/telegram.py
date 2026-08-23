@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Telegram sender for the detection floor.
 
-Tiers:  page (loud, photo+text twin)   notify (photo+caption)   digest (silent, batched)
+Tiers:  page (loud, text + chart)   notify (text only)   digest (silent, batched)
 State:  alerts/state.json  — written BEFORE sending so a retry never double-sends.
 """
 import argparse, json, os, sys, time, urllib.request, urllib.parse, pathlib, datetime as dt
@@ -98,6 +98,25 @@ def send(text, photo=None, silent=False):
             if pid:
                 r.setdefault("also_message_ids", []).append(pid)
     return r
+
+
+def _chart_for(f):
+    """The chart rides page-tier alerts only (council §5, "charts on notify tier").
+
+    The tier is read off the STATE dict, never off the detector's Finding: an
+    escalation to page happens in run.py's diff_state, which rewrites `tier` on the
+    stored finding while the Finding object it came from still says notify. Gating
+    anywhere upstream of here would send "this is still happening after the fix was
+    applied" without the picture its reader needs most.
+
+    incidents/<date>/<hhmm>-<signal>-<key8>/view.png is still written for every
+    tier: that folder is the evidence record and has to stay complete. What is cut
+    is the CHANNEL. Above CAPTION_MAX the chart is posted as its own message, which
+    hands the most forwardable and most reply-attractive object on the page to the
+    least urgent tier — for a finding whose recommended action is "review this
+    entity; add to watch if the pattern repeats"."""
+    return f.get("view_png") if f.get("tier") == "page" else None
+
 
 def _log_out(r, kind, case_id=None, reply_to=None):
     """Record a delivered message in the durable ledger (notify/msglog.py).
@@ -663,7 +682,7 @@ def send_pending():
             # it forwards as a live page. Say which it is.
             body += ("\n<i>🔕 Sent silently under incident mode — the header above is this "
                      "run's ping.</i>")
-        r = send(body, photo=f.get("view_png"), silent=silent)
+        r = send(body, photo=_chart_for(f), silent=silent)
         f["send_ok"] = bool(r.get("ok")); f["send_error"] = None if r.get("ok") else str(r.get("error"))[:80]
         if r.get("ok"):
             # What the reader was actually looking at, and when. A person replies to

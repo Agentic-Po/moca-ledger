@@ -62,7 +62,9 @@ class Bed:
         SENT.clear()
 
         def fake_send(text, photo=None, silent=False):
-            SENT.append({"text": text, "silent": silent})
+            # `photo` is recorded, not dropped: which tier gets a chart is a
+            # behaviour now, and a stub that forgets the argument cannot test it.
+            SENT.append({"text": text, "silent": silent, "photo": photo})
             if self.fail_index is not None and len(SENT) - 1 == self.fail_index:
                 return {"ok": False, "error": "http 400"}
             return {"ok": True, "result": {"message_id": 1000 + len(SENT)}}
@@ -201,6 +203,71 @@ def t_incident():
           "Treasury payouts to these wallets only" in h)
     check("the money figure states that its windows differ per wallet",
           "not\none clean window" in h or "not one clean window" in h.replace("\n", " "))
+
+
+def t_charts():
+    print("\ncharts ride the page tier only")
+    png = "incidents/2026-08-21/1320-10-a0000028/view.png"
+
+    # Two loud findings is below incident_mode_min, so there is no header and every
+    # message below is one alert. The wallet key is rendered into the alert text, so
+    # each message can be matched back to its finding without relying on send order.
+    page = _finding(40, tier="page", view_png=png)
+    quiet = _finding(41, tier="notify", signal="S-A", view_png=png)
+    s, sent = run(Bed([page, quiet]))
+    got = {}
+    for x in sent:
+        for f in (page, quiet):
+            if f["key"] in x["text"]:
+                got[f["id"]] = x.get("photo")
+    check("both alerts were sent and matched back to their finding",
+          sorted(got) == sorted([page["id"], quiet["id"]]),
+          f"matched {sorted(got)} of {len(sent)} message(s)")
+    check("a page-tier alert still carries its chart", got.get(page["id"]) == png,
+          f"photo={got.get(page['id'])}")
+    check("a notify-tier alert is sent with no chart", got.get(quiet["id"]) is None,
+          f"photo={got.get(quiet['id'])}")
+
+    # The cut is from the CHANNEL, not from the evidence record: incidents/ still
+    # holds the PNG and state still holds the path that points at it.
+    check("the notify finding keeps its view_png (incidents/ stays complete)",
+          s["open"][quiet["key"]].get("view_png") == png,
+          str(s["open"][quiet["key"]].get("view_png")))
+
+    # An escalation rewrites `tier` on the stored finding and nothing else, so
+    # gating on anything but the stored tier would send it without its chart.
+    check("a case escalated notify -> page gets its chart back",
+          telegram._chart_for({"tier": "page", "view_png": png,
+                               "escalation": "activity after containment"}) == png)
+    check("no chart means no detached chart message left unmapped to a case",
+          telegram._chart_for({"tier": "notify", "view_png": png}) is None)
+    check("a digest finding never carries a chart",
+          telegram._chart_for({"tier": "digest", "view_png": png}) is None)
+
+
+def t_dead_copy():
+    print("\nsignal 14 is a field, not an alert")
+    from notify import explain
+    # detect/signals/outflow.py computes #14 on every run and returns no findings, so
+    # alert copy for it could only be reached by a signal id nothing produces.
+    # tests/test_gate.py holds the other half of this: that it stays that way.
+    check("explain.py carries no alert copy for #14", "14" not in explain.SIGNALS,
+          str(explain.SIGNALS.get("14"))[:60])
+    check("explain.py carries no digest line for #14", "14" not in explain.DIGEST_LINE,
+          str(explain.DIGEST_LINE.get("14"))[:60])
+
+    # Deleting copy is only safe because the fallback is honest rather than silent.
+    # A finding with an unrecognised signal must still render, must still show its
+    # measurement, and must not be given a reassuring sentence nobody wrote for it.
+    body = explain.humanise({"signal": "14", "tier": "notify", "value": 3.0,
+                             "key": "platform", "detail": "x3 vs the 28-d median",
+                             "type_verified": False})
+    check("an unknown signal still renders, and says the measurement is all there is",
+          explain.FALLBACK["title"] in body and "x3 vs the 28-d median" in body,
+          body.splitlines()[0] if body else "")
+    d = explain.digest([{"signal": "14", "tier": "digest", "detail": "x3"}])
+    check("an unknown signal in the digest is counted, never dropped in silence",
+          explain.FALLBACK["title"] in d and "1 event(s)" in d, d[:100])
 
 
 def t_holding():
@@ -956,7 +1023,8 @@ def t_digest_example():
 
 
 def main():
-    for fn in (t_incident, t_holding, t_alarm, t_post, t_replies, t_reply_time,
+    for fn in (t_incident, t_charts, t_dead_copy, t_holding, t_alarm, t_post,
+               t_replies, t_reply_time,
                t_reply_delivery, t_dead_copy, t_local_send_guard, t_gate_failure, t_shadow, t_cluster,
                t_owner, t_cut_list,
                t_leaks,

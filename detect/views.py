@@ -4,9 +4,13 @@ Concentration bars, burst timeline, fan-in tree, watchlist/context table, and a
 measured-value bar for everything else. Neutral wording; entity keys truncated to
 14 chars.
 
+A PNG is written for every tier, because incidents/ is the evidence record. Only
+page-tier alerts carry it into the channel (notify/telegram.py `_chart_for`,
+council §5).
+
 No chart draws a threshold line, the organic p50-p95 band, or a value-vs-threshold
-pair. Money-bearing alerts exceed Telegram's 1024-character caption limit, so the
-chart is posted as its own message and is the most forwardable object in the
+pair. A page alert carrying money exceeds Telegram's 1024-character caption limit,
+so its chart is posted as its own message and is the most forwardable object in the
 channel; explain.py strips the same numbers from the text, and a picture of them
 undoes that (council §7).
 """
