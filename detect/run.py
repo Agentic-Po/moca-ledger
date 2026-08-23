@@ -220,8 +220,20 @@ def diff_state(state, findings, ctx, fresh_h=24):
             if status == "closed":
                 pass                                      # a closed case stays closed until reopened
             elif status == "contained":
-                # a fix was applied — ANY further activity is more important, not less
-                if _grew(cur, prev_value, factor=1.0):
+                # A fix was applied, so ANY FURTHER activity is more important, not less.
+                # "Further" means more than there was when the fix went in — measured
+                # against value_at_status, strictly greater.
+                #
+                # This used to read `_grew(cur, prev_value, factor=1.0)`, and both halves
+                # were wrong. `prev_value` is the value at the LAST EVALUATION, and the
+                # detector re-derives every finding from the whole ledger every run, so on
+                # unchanged data prev_value == the current value. And non-strict `>=` at
+                # factor 1.0 is satisfied by "did not move". The result: marking a case
+                # contained made it page every single run, forever, on a wallet that had
+                # done nothing — reproduced on the live record before this was changed.
+                # That is the precise opposite of what the verb is for, and of what a
+                # person means when they say "we fixed it, tell me if it comes back".
+                if _grew(cur, cur.get("value_at_status"), factor=1.0, strict=True):
                     cur["pending_send"] = True
                     cur["escalation"] = "activity after containment"
                     cur["tier"] = "page"
@@ -277,12 +289,19 @@ def _last_alerted_value(cur):
     return None
 
 
-def _grew(cur, baseline, factor=1.5):
+def _grew(cur, baseline, factor=1.5, strict=False):
     """True when the finding has moved materially past the value it had when a
-    human last set its status. Non-numeric values fall back to 'changed at all'."""
+    human last set its status. Non-numeric values fall back to 'changed at all'.
+
+    `strict` exists because `>=` is not "grew". At factor 1.0 the non-strict form is
+    satisfied by a value that has not moved at all, and the detector re-derives every
+    finding from the whole ledger on every run — so an unchanged case matched it every
+    time. See the `contained` branch below for what that cost."""
     try:
         now, base = float(cur.get("value")), float(baseline)
-        return base > 0 and now >= base * factor
+        if base <= 0:
+            return False
+        return now > base * factor if strict else now >= base * factor
     except (TypeError, ValueError):
         return str(cur.get("value")) != str(baseline)
 

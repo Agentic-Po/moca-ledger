@@ -637,6 +637,26 @@ def t_no_intent_claims():
           bool(bad.search("Movement means the operator is active again.")))
 
 
+def t_contained_means_contained():
+    """`contained` must mean silence-unless-it-moves, not a page every run."""
+    print("\nwhat contained does")
+    sys.path.insert(0, str(ROOT / "detect"))
+    import run as RUN
+
+    check("an unchanged value is not growth", not RUN._grew({"value": 119.0}, 119.0,
+                                                            factor=1.0, strict=True))
+    check("...but the old non-strict form said it was",
+          RUN._grew({"value": 119.0}, 119.0, factor=1.0))
+    check("a real increase after containment IS growth",
+          RUN._grew({"value": 130.0}, 119.0, factor=1.0, strict=True))
+    check("a decrease is not", not RUN._grew({"value": 100.0}, 119.0, factor=1.0, strict=True))
+    check("containment compares against the value when it was contained, not the last run",
+          "value_at_status" in (ROOT / "detect" / "run.py").read_text()
+          .split('elif status == "contained":')[1].split("elif")[0])
+    src = (ROOT / "detect" / "run.py").read_text().split('elif status == "contained":')[1].split("elif")[0]
+    check("and it does so strictly", "strict=True" in src)
+
+
 def t_heartbeat():
     """Proof of life: it must prove, and it must never reassure."""
     print("\nthe daily proof of life")
@@ -1304,7 +1324,8 @@ def main():
                t_replies, t_reply_time,
                t_reply_delivery, t_dead_copy, t_local_send_guard,
                t_platform_signals_can_speak_twice, t_cadence_honesty,
-               t_no_intent_claims, t_heartbeat, t_gate_failure, t_shadow, t_cluster,
+               t_no_intent_claims, t_contained_means_contained, t_heartbeat,
+               t_gate_failure, t_shadow, t_cluster,
                t_owner, t_cut_list, t_selftest,
                t_leaks,
                t_price, t_msglog,
