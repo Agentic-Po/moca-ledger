@@ -377,6 +377,38 @@ def t_leaks():
     check("no chart draws the organic p50-p95 band", "axhspan" not in src)
 
 
+# ---------------------------------------------------------------- the money line
+
+def t_price():
+    """A dollar figure must say how old the price behind it is."""
+    print("\nhow old the money is")
+    sys.path.insert(0, str(ROOT / "detect"))
+    import price
+
+    def note_at(hours):
+        real = price.age_h
+        try:
+            price.age_h = lambda doc=None: hours
+            return price.price_of("MOCA")[1]
+        finally:
+            price.age_h = real
+
+    fresh, day_old, stale = note_at(2), note_at(20), note_at(70)
+    check("a fresh price says how old it is", "2 h old" in fresh, fresh)
+    check("a price inside the day is not called stale", "stale" not in day_old, day_old)
+    check("a price older than a day is marked stale", "stale" in stale, stale)
+    check("a stale price states its age, not just its date", "3 d old" in stale, stale)
+    check("the stale marker is reachable well under three days",
+          price.STALE_DAYS <= 1, f"STALE_DAYS={price.STALE_DAYS}")
+
+    # The note is what both renderers append to the money line, verbatim.
+    from notify import explain
+    lines = explain.money_lines({"moca_since": 38141.0, "first_ts": "2026-08-21T00:00:00+00:00",
+                                 "type_verified": False})
+    check("the money line carries the price note",
+          any("price" in l for l in lines), " | ".join(lines)[:120])
+
+
 # ---------------------------------------------------------------- concurrency
 
 def t_merge():
@@ -414,7 +446,7 @@ def t_prune():
 
 def main():
     for fn in (t_incident, t_holding, t_alarm, t_post, t_replies, t_reply_time,
-               t_reply_delivery, t_leaks, t_merge, t_prune):
+               t_reply_delivery, t_leaks, t_price, t_merge, t_prune):
         fn()
     bad = [n for ok, n, _ in RESULTS if not ok]
     print(f"\nnotify: {'FAIL — ' + str(len(bad)) + ' check(s)' if bad else 'OK — all ' + str(len(RESULTS)) + ' checks green'}")

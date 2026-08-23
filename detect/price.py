@@ -11,7 +11,10 @@ incident. So the rule is:
     that produced any past alert is in git history,
   * render every money line from that cache, never from a live call,
   * a cache older than STALE_DAYS is still used — it is marked `price stale`
-    in the copy rather than silently dropped or silently trusted.
+    in the copy rather than silently dropped or silently trusted,
+  * every money line carries the AGE of the price it used, not just the date it
+    was fetched on. `price cached 2026-08-20` beside a dollar figure on the 23rd
+    reads as provenance; `70 h old` reads as what it is.
 
 Nothing here raises. Every entry point returns a value plus a human-readable
 note saying how good that value is; callers put the note in the message.
@@ -40,7 +43,10 @@ COINS = {
 ENDPOINT = "https://coins.llama.fi/prices/current/" + ",".join(COINS.values())
 
 MAX_AGE_H = 24        # refresh no more than once a day
-STALE_DAYS = 3        # older than this and the copy says "price stale"
+# refresh() is fail-soft by design, so a frozen cache is the EXPECTED failure, not
+# the exotic one. At 3 days a price could be 71 h out of date and still print as
+# though it were merely "cached"; one missed day is the honest line.
+STALE_DAYS = 1        # older than this and the copy says "price stale"
 MIN_CONFIDENCE = 0.5  # below this we keep the previous cache rather than overwrite
 
 
@@ -127,16 +133,33 @@ def refresh(max_age_h=MAX_AGE_H, force=False, timeout=15):
     return True, "price: refreshed " + " ".join(f"{s}=${v}" for s, v in new["prices"].items())
 
 
+def age_words(a):
+    """'2 h old' / '3 d old'. None when there is no usable timestamp."""
+    if a is None:
+        return None
+    if a < 1:
+        return "under 1 h old"
+    return f"{a:.0f} h old" if a < 48 else f"{a / 24:.0f} d old"
+
+
 def price_of(symbol="MOCA"):
-    """(price_usd_or_None, note). note is exactly the marker the copy must carry."""
+    """(price_usd_or_None, note). note is exactly the marker the copy must carry.
+
+    The note always states the age. A reader scanning `~38,141 MOCA (~$321) · price
+    cached 2026-08-20` on the 23rd reads the date as where the number came from, not
+    as how old the dollars are."""
     doc = load()
     p = (doc.get("prices") or {}).get(symbol)
     if not isinstance(p, (int, float)) or p <= 0:
         return None, "price unavailable"
     a = age_h(doc)
-    if a is None or a > STALE_DAYS * 24:
-        return float(p), "price stale"
-    return float(p), f"price cached {doc.get('date') or str(doc.get('fetched_at'))[:10]}"
+    when = doc.get("date") or str(doc.get("fetched_at"))[:10]
+    old = age_words(a)
+    if a is None:
+        return float(p), "price stale — age unknown"
+    if a > STALE_DAYS * 24:
+        return float(p), f"price stale — cached {when}, {old}"
+    return float(p), f"price cached {when} — {old}"
 
 
 def usd(amount, symbol="MOCA"):

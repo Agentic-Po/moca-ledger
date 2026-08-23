@@ -319,11 +319,12 @@ def one_pass(a):
                 findings[f.id] = f
         except Exception as e:  # fail-soft: the ledger signals must still land
             print(f"balance_watch: soft-fail ({type(e).__name__})")
-    # ---- USD price cache: one fetch a day, committed, never blocking. Same
-    # no-network guard as the balance watch so replay/CI stay offline and
-    # byte-identical. A failure here only costs the "(~$…)" half of a money line.
-    if not (a.dry_run or a.as_of is not None or os.environ.get("SKIP_PRICE_FETCH")
-            or os.environ.get("SKIP_BALANCE_WATCH")):
+    # ---- USD price cache: one fetch a day, committed, never blocking. Replay and CI
+    # stay offline through --dry-run/--as-of, which is what they actually set; the
+    # price fetch has its OWN switch. It used to honour SKIP_BALANCE_WATCH as well,
+    # so turning off the exit-leg balance watch — for any reason at all — silently
+    # froze the price cache too, and a frozen cache is what makes a money line stale.
+    if not (a.dry_run or a.as_of is not None or os.environ.get("SKIP_PRICE_FETCH")):
         try:
             import price
             changed, note = price.refresh()
