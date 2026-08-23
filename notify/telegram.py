@@ -159,6 +159,11 @@ def save_state(s):
     STATE.write_text(json.dumps(s, indent=1))
 
 def _suppressed(f, s):
+    # An escalation always overrides a human status. `contained` in particular exists
+    # to make further activity LOUDER: suppressing it inverted the one command whose
+    # whole purpose is to prove a fix held.
+    if f.get("escalation") in ("activity after containment", "still growing since you reported it"):
+        return None
     """Why this finding is not going out right now, or None.
 
     "acked" is permanent — a person decided it. "snoozed" and "muted" are temporary,

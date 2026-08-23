@@ -318,3 +318,17 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_containment_escalation_is_never_suppressed():
+    """A contained case that fires again must page. Suppressing it inverted the one
+    command whose purpose is to prove a fix held (fix-round critic #1)."""
+    import notify.telegram as T
+    f = {"ack_by": "123", "status": "contained",
+         "escalation": "activity after containment", "tier": "page"}
+    assert T._suppressed(f, {}) is None, "containment escalation must not be suppressed"
+    g = {"ack_by": "123", "status": "reported",
+         "escalation": "still growing since you reported it", "tier": "notify"}
+    assert T._suppressed(g, {}) is None, "growth escalation must not be suppressed"
+    h = {"ack_by": "123", "status": "reported"}
+    assert T._suppressed(h, {}) == "acked", "a quiet acked case stays quiet"
