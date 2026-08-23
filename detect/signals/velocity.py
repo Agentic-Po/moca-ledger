@@ -7,13 +7,7 @@ EV  platform equip velocity: non-excluded equip-sized payouts / rolling 24 h
     >= 2 x trailing-28-d p95 NOTIFY, >= 3 x PAGE (chain-only spread-across-N backstop).
 """
 import collections
-from . import register, Finding, SLOT, DAY, day_str
-
-
-def _pct(sorted_vals, p):
-    if not sorted_vals:
-        return 0
-    return sorted_vals[min(len(sorted_vals) - 1, int(p * (len(sorted_vals) - 1)))]
+from . import register, Finding, SLOT, DAY, day_str, _pct
 
 
 @register("velocity", order=40)

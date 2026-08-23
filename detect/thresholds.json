@@ -21,6 +21,7 @@
  "sa_young_floor": 10,
  "sa_mult": 1.5,
  "sa_baseline_days": 28,
+ "sa_baseline_pct": 0.95,
  "watch_big_moca": 1000,
  "quest_notify_per_day": 50,
  "quest_page_per_day": 100,

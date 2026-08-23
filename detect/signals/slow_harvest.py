@@ -1,17 +1,19 @@
 """S-A slow harvest, adaptive floor.
 
 Per-creator rolling-24 h equip-sized payouts >=
-  max(sa_floor, sa_mult x trailing-28-day organic per-creator-day max)   creator >= 7 d old
+  max(sa_floor, sa_mult x the sa_baseline_pct-ile of organic per-creator-days
+      over sa_baseline_days)                                            creator >= 7 d old
   sa_young_floor                                                          creator < 7 d old
 
 "Organic" for the baseline = creators that are not excluded and whose salted hash is not
-classed TP/suspect in labels-lite.json. Baseline days inside a reward pause are skipped
-and the threshold freezes at its last pre-pause value.
+classed TP/suspect in labels-lite.json. Baseline days inside a reward pause contribute no
+creator-days, so a pause shrinks the population rather than the value; with every baseline
+day paused the bar is sa_floor.
 NOTIFY only — a genuinely viral skill can trip this; human review, never auto-act.
 """
 import collections
 import math
-from . import register, Finding, SLOT, DAY, H, day_str, ts_of
+from . import register, Finding, SLOT, DAY, H, day_str, ts_of, _pct
 
 
 @register("slow_harvest", order=25)
@@ -24,16 +26,27 @@ def run(ctx):
         if ctx.is_internal(t) or ctx.lite_class(t) in ("TP", "suspect"):
             continue
         daily[day_str(ts)][t] += 1
-    day_max = {d: max(c.values()) for d, c in daily.items()}
-
     def thr_for(day_ts):
+        """The bar for a creator >= 7 d old on this day.
+
+        A percentile of every organic creator-day in the window, not the largest one.
+        Under the max-of-maxima this replaced, ONE creator on ONE day set the bar for
+        the next 28 days — and that creator is by construction the most harvest-like
+        one nobody has classed yet, so an uncaught farm raised the bar for catching
+        farms. labels-lite.json is read by exactly one line of detector code (the
+        organic filter above), which made a single wrong class a silent switch for
+        this threshold: measured on the committed ledger, dropping every class moved
+        the >=7 d bar from 11 to 3,828 (348x) with the floor lifted, and one wallet's
+        13 payouts on 2026-07-17 held the live bar at 20 instead of 15 for the 28 days
+        up to 14 Aug. The percentile is 1.0x under both, and fires the same 1,174
+        times on the same 5 entities."""
         vals = []
         for j in range(1, T["sa_baseline_days"] + 1):
             d_ts = day_ts - j * DAY
             if ctx.in_pause(d_ts):
                 continue
-            vals.append(day_max.get(day_str(d_ts), 0))
-        m = max(vals) if vals else 0
+            vals.extend(daily.get(day_str(d_ts), {}).values())
+        m = _pct(sorted(vals), T["sa_baseline_pct"])
         return max(T["sa_floor"], math.ceil(T["sa_mult"] * m)) if m else T["sa_floor"]
 
     # rolling 24 h per creator, evaluated per slot

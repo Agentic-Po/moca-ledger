@@ -50,6 +50,16 @@ def utc(ts):
     return dt.datetime.fromtimestamp(ts, dt.UTC).strftime("%Y-%m-%d %H:%M")
 
 
+def _pct(sorted_vals, p):
+    """The p-th percentile, nearest-rank. Shared on purpose: #9/EV and S-A both
+    describe their baseline as a p95, and two private copies of this convention
+    would let one of them be quietly fixed (to interpolate, or to handle p=1.0)
+    while the other kept claiming the same word in its docstring."""
+    if not sorted_vals:
+        return 0
+    return sorted_vals[min(len(sorted_vals) - 1, int(p * (len(sorted_vals) - 1)))]
+
+
 def day_str(ts):
     return dt.datetime.fromtimestamp(ts, dt.UTC).strftime("%Y-%m-%d")
 

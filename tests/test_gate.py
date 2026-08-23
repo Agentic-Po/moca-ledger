@@ -8,6 +8,9 @@ G3 first-fire deadlines (ledger/block time, slot-start convention):
   - 15  fires <= 2026-08-21 01:30 UTC
 G4 zero page-tier fires in the benign windows 2026-07-16 and 2026-07-22, and
    zero page/notify fires keyed on an excluded (allow-listed) creator, ever.
+G5 no single class in labels-lite.json, and no baseline window length, may move
+   S-A's threshold by more than 2x. The file that classes entities is read by
+   exactly ONE line of detector code, so a wrong class is a silent switch.
 G2 parity: `run.py --as-of <block>` == `replay.py --as-of <block>` per signal.
 
 Stdout: pass/fail lines and counts only — never entity keys.
@@ -24,6 +27,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "detect"))
 
 from signals import Ctx, evaluate, ts_of, utc  # noqa: E402
+from signals import slow_harvest  # noqa: E402  (G5 re-runs this one signal on its own)
 
 FAILS = []
 
@@ -76,6 +80,43 @@ def main():
             if f.tier in ("page", "notify") and f.key.startswith("0x") and ctx.is_internal(f.key):
                 bad2 += 1
     check("G4 zero page/notify fires on excluded creators", bad2 == 0, f"{bad2} fires")
+
+    # ---- G5 nothing outside the data may set S-A's bar.
+    # labels-lite.json is read by exactly one line of detector code — the organic
+    # filter in slow_harvest — so while the baseline was a max-of-maxima, ONE class
+    # decided the threshold, and the wallet holding that day is by construction the
+    # most harvest-like creator nobody has classed yet. An uncaught farm raised the
+    # bar for catching farms.
+    #
+    # sa_floor hides this at today's volumes: with the floor left in, this check also
+    # passes on the max-of-maxima and proves nothing. So the floor is dropped to 1 to
+    # compare the baselines themselves. Measured: 348x before the percentile, 1.0x
+    # after. Bounded rather than asserted equal, because a strict form would go red on
+    # a healthy system the moment the organic population grows.
+    def sa_max_thr(lite=None, days=None):
+        keep = (ctx.lite, ctx.thr["sa_floor"], ctx.thr["sa_young_floor"], ctx.thr["sa_baseline_days"])
+        if lite is not None:
+            ctx.lite = lite
+        ctx.thr["sa_floor"] = ctx.thr["sa_young_floor"] = 1
+        if days:
+            ctx.thr["sa_baseline_days"] = days
+        try:
+            return max((f.threshold for f in slow_harvest.run(ctx)), default=0)
+        finally:
+            (ctx.lite, ctx.thr["sa_floor"], ctx.thr["sa_young_floor"],
+             ctx.thr["sa_baseline_days"]) = keep
+
+    lab, unlab = sa_max_thr(), sa_max_thr(lite={})
+    check("G5 no class moves S-A's baseline by more than 2x", unlab <= 2 * lab,
+          f"bar {lab} classed vs {unlab} unclassed")
+    # 1.25x, not 2x: at 2x this check passes on the max-of-maxima too (11 -> 20 is
+    # 1.8x) and would prove nothing. A percentile only moves with the population, and
+    # a LONGER window reaches back to quieter days, so the bar should fall or hold as
+    # the window grows — never climb. The max climbs by construction.
+    d1 = ctx.thr["sa_baseline_days"]
+    short, long = sa_max_thr(days=d1), sa_max_thr(days=2 * d1)
+    check("G5 doubling the baseline window does not raise the bar", long <= 1.25 * short,
+          f"bar {short} at {d1} d vs {long} at {2 * d1} d")
 
     # ---- G2 parity: run.py --as-of == replay.py per signal
     as_of = ctx.as_of_block
