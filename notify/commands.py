@@ -13,6 +13,11 @@ ROOT  = pathlib.Path(__file__).resolve().parent.parent
 STATE = ROOT / "alerts" / "state.json"
 HOME  = pathlib.Path.home() / ".moca-ledger"
 
+try:                              # the durable message ledger; see notify/msglog.py
+    import msglog
+except ImportError:
+    from notify import msglog
+
 def _cfg(env, fname):
     return os.environ.get(env) or ((HOME / fname).read_text().strip() if (HOME / fname).exists() else "")
 
@@ -44,6 +49,13 @@ def _chunks(text, limit=3800):
 
 UNDELIVERED = []      # replies Telegram refused this run — see main()
 
+# What happened to the message currently being handled, for the ledger. Filled at
+# each decision point in handle() and read once, in main(), so that EVERY update is
+# recorded — matched or not, understood or not. An update that reaches none of these
+# branches is still written, as "seen": the rule is that nothing a person sends is
+# dropped without a row saying so.
+OUTCOME = {}
+
 
 def reply(text, to=None):
     """Send, in as many messages as it takes, and report whether it arrived.
@@ -62,6 +74,10 @@ def reply(text, to=None):
             ok = False
             print(f"commands: reply NOT delivered ({r.get('error')}) — "
                   f"the person who asked got nothing", file=sys.stderr)
+        else:
+            # People reply to my confirmations too. Recorded so "I cannot tell which
+            # case" can become "that was one of my own confirmations".
+            msglog.record_out((r.get("result") or {}).get("message_id"), "confirm")
     if not ok:
         UNDELIVERED.append({"reply_to": to, "starts": str(text)[:60]})
     return ok
@@ -97,16 +113,43 @@ def _esc(x):
     return (str(x or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
+def _log_in(u):
+    """Write one row for this update, whatever became of it. Never raises."""
+    try:
+        if OUTCOME.get("redact"):
+            # A message from a chat this bot does not serve. It is recorded — silence
+            # is what this ledger exists to prevent — but a stranger's words and the
+            # chat they came from are not ours to keep.
+            m = dict((u or {}).get("message") or {})
+            m.pop("text", None); m.pop("chat", None); m.pop("reply_to_message", None)
+            u = dict(u or {}, message=m)
+        msglog.record_in(u, resolved_case=OUTCOME.get("case"),
+                         outcome=OUTCOME.get("outcome") or "seen",
+                         action=OUTCOME.get("action"))
+    except Exception as e:
+        print(f"commands: msglog.record_in failed ({type(e).__name__})", file=sys.stderr)
+
+
 def load(): return json.loads(STATE.read_text()) if STATE.exists() else {"open": {}, "telegram_offset": 0}
 def save(s): STATE.write_text(json.dumps(s, indent=1))
 
 def find_by_reply(s, m):
     """Which case is this message a reply to? Telegram delivers replies to the bot
-    even with privacy mode on, so replying to an alert is the natural way to act on it."""
+    even with privacy mode on, so replying to an alert is the natural way to act on it.
+
+    Two layers, in order of cost: `by_message` in the state file is the fast path but
+    is pruned to the last 300 entries and only ever held alerts; the message ledger
+    holds every message either way sent, follows the parent chain (a reply to a chart
+    or to a tier-2 detail resolves to the alert they hang off), and is not pruned."""
     r = m.get("reply_to_message") or {}
     mid = r.get("message_id")
     if not mid: return None, None
     fid = (s.get("by_message") or {}).get(str(mid))
+    if not fid:
+        try:
+            fid = msglog.resolve(mid)
+        except Exception as e:
+            print(f"commands: msglog.resolve failed ({type(e).__name__})", file=sys.stderr)
     if fid: return find(s, fid)
     return None, None
 
@@ -310,12 +353,15 @@ def main():
         try:
             changed += handle(s, u.get("message") or {})
         except Exception as e:
+            OUTCOME.update(outcome="error", action=type(e).__name__)
             print(f"commands: update skipped ({type(e).__name__})")
             try:
                 reply("\u26a0\ufe0f I could not process that message \u2014 <b>your case state was NOT changed</b>. "
                       "Send <code>/cases</code> to see where things stand.", (u.get("message") or {}).get("message_id"))
             except Exception:
                 pass
+        finally:
+            _log_in(u)
     save(s)
     print(f"commands: {len(ups)} update(s), {changed} state change(s)")
     if UNDELIVERED:
@@ -376,6 +422,7 @@ def read_status(text):
 
 def handle(s, m):
     """One message. Returns 1 if it changed case state."""
+    OUTCOME.clear(); OUTCOME["outcome"] = "seen"
     text = (m.get("text") or "").strip()
     uid  = str((m.get("from") or {}).get("id", ""))
     mid  = m.get("message_id")
@@ -385,34 +432,57 @@ def handle(s, m):
     # alert id and resolve to somebody else's case.
     chat = str((m.get("chat") or {}).get("id", ""))
     if CHAT() and chat and chat != str(CHAT()):
+        OUTCOME.update(outcome="ignored: another chat", redact=True)
         print(f"commands: ignoring a message from another chat (id withheld)")
         return 0
     # fail CLOSED: with no authorised list configured nobody may change state
     allowed = bool(ACK()) and uid in ACK()
-    deny = lambda: _deny(uid, mid)
+
+    def deny():
+        OUTCOME.update(outcome="denied", action="not on the on-call list")
+        return _deny(uid, mid)
+
     rk, rf = find_by_reply(s, m)
+    if rf:
+        OUTCOME["case"] = rf.get("id")
 
     if not text.startswith("/"):
         if not rf:
             # A person wrote something and expects to be heard. Silence here is how a
             # reply at 01:32 disappeared with no trace. Always answer.
-            if (m.get("reply_to_message") or {}).get("message_id"):
-                # Do not diagnose. The message may be the digest, a health notice, one of
-                # my own confirmations, or an alert old enough that its id has aged out of
-                # the reply map \u2014 I cannot tell which, and claiming it was never recorded
-                # is usually false.
-                reply("I saw your reply and I have <b>not</b> changed anything, because I "
-                      "cannot tell which case that message was about. It may not be a case at "
-                      "all (a digest, a health notice, or one of my own replies), or it may be "
-                      "old enough that I no longer hold the link.\n\n"
-                      "Send <code>/cases</code> and use <code>/contained &lt;id&gt;</code>, or "
-                      "reply to a recent alert.", mid)
+            rt = (m.get("reply_to_message") or {}).get("message_id")
+            if rt:
+                # The ledger usually knows WHAT that message was even when it is not a
+                # case, so say it. Only when it does not is the honest answer the old
+                # one: do not diagnose, and never claim the message was not recorded.
+                what = None
+                try:
+                    what = msglog.describe_words(rt)
+                except Exception as e:
+                    print(f"commands: msglog.describe failed ({type(e).__name__})", file=sys.stderr)
+                OUTCOME.update(outcome="unmatched", action="asked for the id")
+                if what:
+                    reply(f"I saw your reply and I have <b>not</b> changed anything: you replied "
+                          f"to <b>{what}</b>, which is not a case on its own.\n\n"
+                          f"Reply to the alert itself, or send <code>/cases</code> and use "
+                          f"<code>/contained &lt;id&gt;</code>. If that message really was about a "
+                          f"case, reply to it with <code>/link &lt;id&gt;</code> and I will "
+                          f"remember the connection.", mid)
+                else:
+                    reply("I saw your reply and I have <b>not</b> changed anything, because I "
+                          "cannot tell which case that message was about. It may not be a case at "
+                          "all (a digest, a health notice, or one of my own replies), or it may be "
+                          "old enough that I no longer hold the link.\n\n"
+                          "Send <code>/cases</code> and use <code>/contained &lt;id&gt;</code>, or "
+                          "reply to a recent alert.", mid)
             elif any(w in text.lower() for w in ("contained", "reported", "closed", "watching", "fixed", "paused", "done")):
+                OUTCOME.update(outcome="unmatched", action="no reply target")
                 reply("I think you are telling me about a case, but I do not know which one. "
                       "Reply directly to the alert, or send <code>/cases</code> to see the ids.", mid)
             return 0
         st, guess = read_status(text)
         if not st:
+            OUTCOME.update(outcome="matched", action=f"asked to confirm '{guess}'" if guess else "asked for a word")
             if guess:
                 # Never guess on the reader's behalf. "I closed the support ticket"
                 # closed a live security case; "not yet contained" recorded CONTAINED,
@@ -427,6 +497,7 @@ def handle(s, m):
         if not allowed:
             deny(); return 0
         set_status(s, rf.get("id"), st, uid, text[:300], when=m.get("date"))
+        OUTCOME.update(outcome="matched", action=st)
         icon, meaning = STATUSES.get(st, ("\U0001f440", ""))
         extra = {"reported": "I will stay quiet unless it keeps growing.",
                  "contained": "Any further activity will page you \u2014 that would mean the fix did not hold.",
@@ -444,6 +515,7 @@ def handle(s, m):
 
     cmd, *args = text.split()
     cmd = cmd.split("@")[0].lower()
+    OUTCOME.update(outcome="command", action=cmd)
     CASE_CMDS = ("/reported", "/contained", "/close", "/watching", "/reopen", "/ack", "/snooze")
     if rf and cmd in CASE_CMDS and (not args or not find(s, args[0])[1]):
         args = [rf.get("id")] + list(args)          # replying supplies the case id
@@ -462,7 +534,10 @@ def handle(s, m):
               "/watching &lt;id&gt; \u00b7 /close &lt;id&gt; \u00b7 /reopen &lt;id&gt;\n\n"
               "<b>Quieting noise</b>\n"
               "/snooze &lt;id&gt; &lt;hours&gt; \u2014 one case, quiet for that long. It still arrives afterwards.\n"
-              "/ack &lt;id&gt; [note] \u2014 one case, no more routine repeats.", mid)
+              "/ack &lt;id&gt; [note] \u2014 one case, no more routine repeats.\n\n"
+              "<b>When I cannot tell which case you mean</b>\n"
+              "Reply to the message and send /link &lt;id&gt; \u2014 I will remember that "
+              "message, and anything replying to it, as that case.", mid)
     elif cmd in ("/reported", "/contained", "/close", "/watching", "/reopen") and args:
         if not allowed:
             deny(); return 0
@@ -501,6 +576,35 @@ def handle(s, m):
             h = float(args[1]) if len(args) > 1 and args[1].replace(".", "").isdigit() else 6
             f["snooze_until"] = (now + dt.timedelta(hours=h)).isoformat()
             reply(f"\U0001f634 snoozed <code>{f.get('id')}</code> for {h:g} h", mid)
+        return 1
+    elif cmd == "/link":
+        # The permanent limit this cannot fix: Telegram will not enumerate messages
+        # the bot sent before the ledger existed, and it cannot be asked what an
+        # arbitrary id was. `/link` is the manual route for exactly those.
+        if not allowed:
+            deny(); return 0
+        target = (m.get("reply_to_message") or {}).get("message_id")
+        if not target or not args:
+            reply("Reply to the message you want me to connect, and send "
+                  "<code>/link &lt;case id&gt;</code>. I will remember that message — and "
+                  "anything replying to it — as belonging to that case.", mid)
+            return 0
+        k, f = find(s, args[0])
+        if not f:
+            reply(f"no case matching <code>{_esc(args[0])}</code> — send <code>/cases</code> "
+                  f"for the ids", mid)
+            return 0
+        try:
+            msglog.link(target, f.get("id"))
+        except Exception as e:
+            print(f"commands: msglog.link failed ({type(e).__name__})", file=sys.stderr)
+            reply("I could not write that link down, so I have <b>not</b> promised it. "
+                  "Use <code>/contained &lt;id&gt;</code> against the case directly.", mid)
+            return 0
+        s.setdefault("by_message", {})[str(target)] = f.get("id")
+        OUTCOME.update(case=f.get("id"), action="/link")
+        reply(f"\U0001f517 linked that message to <code>{f.get('id')}</code>. Replying to it "
+              f"will now record against that case.", mid)
         return 1
     elif cmd == "/unmute" and args:
         if not allowed:

@@ -60,7 +60,15 @@ jobs:
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
           PRIVATE_REPO_PAT:   ${{ secrets.PRIVATE_REPO_PAT }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: python3 notify/selftest.py
+        run: |
+          # The self-test posts to the real channel, so its message ids belong in the
+          # ledger too — otherwise a reply to the banner is unmatchable and the bot
+          # cannot even say "that was the daily self-test".
+          python3 notify/msglog.py pull || echo "msglog pull failed — ids from this run may be unmatchable"
+          rc=0
+          python3 notify/selftest.py || rc=$?
+          python3 notify/msglog.py push || echo "msglog push failed — ids from this run may be unmatchable"
+          exit $rc
 
       # Belt and braces: the script cleans up in its own `finally`, but if the
       # process is killed (timeout, cancellation) that never runs. This does.

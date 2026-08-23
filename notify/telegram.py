@@ -99,6 +99,30 @@ def send(text, photo=None, silent=False):
                 r.setdefault("also_message_ids", []).append(pid)
     return r
 
+def _log_out(r, kind, case_id=None, reply_to=None):
+    """Record a delivered message in the durable ledger (notify/msglog.py).
+
+    EVERY send goes through here, not just alerts. `by_message` in alerts/state.json
+    only ever held alerts and is pruned to the last 300 entries, so a reply to a
+    digest, a notice, a chart or an older alert was unmatchable — and an unmatched
+    reply used to be discarded. Never raises: a bookkeeping failure must not cost
+    the message it is bookkeeping."""
+    try:
+        try:
+            import msglog
+        except ImportError:
+            from notify import msglog
+        mid = (r.get("result") or {}).get("message_id")
+        if mid:
+            msglog.record_out(mid, kind, case_id=case_id, reply_to=reply_to)
+        for extra in (r.get("also_message_ids") or []):
+            # The detached chart: the most reply-attractive object on the page.
+            msglog.record_out(extra, "chart", case_id=case_id, reply_to=mid)
+    except Exception as ex:
+        print(f"msglog: not recorded ({type(ex).__name__}) — reply matching may miss "
+              f"this message", file=sys.stderr)
+
+
 ICON = {"page": "🚨", "notify": "🟠", "digest": "📋", "health": "⏳"}
 
 def render(f):
@@ -551,20 +575,20 @@ def send_pending():
     if not incident_on and s.get("incident"):
         prev_inc = s.pop("incident")
         print("incident: over (six hours with nothing loud)")
-        send("🔕 <b>Incident mode off.</b> Alerts are loud again.\n"
+        _log_out(send("🔕 <b>Incident mode off.</b> Alerts are loud again.\n"
              "<i>This is not an all-clear — only a person says that. It means six hours "
              "passed with nothing new loud enough to alert on. Send <code>/cases</code> "
-             "for what is still open.</i>", silent=True)
+             "for what is still open.</i>", silent=True), "notice")
 
     # ---- anything the state layer dropped must be SAID, not only logged (§6.6)
     rn = s.get("retired_notice")
     if rn:
         s.pop("retired_notice", None); save_state(s)
-        send(f"⚠️ <b>{rn.get('unacked', 0)} unacknowledged case(s) were aged out of my memory.</b>\n"
+        _log_out(send(f"⚠️ <b>{rn.get('unacked', 0)} unacknowledged case(s) were aged out of my memory.</b>\n"
              f"The case list is at its size limit, so the oldest {rn.get('total', 0)} finding(s) "
              f"were retired to keep the detector able to restore its state at all. They are gone "
              f"from <code>/cases</code> and cannot be replied to. The chain data behind them is "
-             f"still in the repo.", silent=False)
+             f"still in the repo.", silent=False), "notice")
 
     if not pending:
         s["loud_held"] = 0
@@ -600,7 +624,8 @@ def send_pending():
         err = None
         for i, chunk in enumerate(_chunks(header, 3800)):
             r = send(chunk, silent=bool(i))
-            if not r.get("ok"):                          # EVERY chunk, not just the last:
+            _log_out(r, "notice")                        # a reply to the header must be
+            if not r.get("ok"):                          # answerable. EVERY chunk, not just the last:
                 header_ok = False                        # chunk 1 carries the counts and the
                 err = str(r.get("error"))[:80]           # money, and a lost chunk 1 with a
         inc["header_ok"] = header_ok                     # delivered chunk 2 would mute the run
@@ -635,10 +660,11 @@ def send_pending():
             # against (fix-round critic #5). Two entries, newest first: a re-fire can
             # land between the reply being typed and the reply being read.
             f["sends"] = ([[int(time.time()), f.get("value")]] + (f.get("sends") or []))[:SENDS_KEEP]
+        _log_out(r, "alert", case_id=f.get("id"))
         mid = (r.get("result") or {}).get("message_id")
         if mid:
             f["tg_message_id"] = mid
-            s.setdefault("by_message", {})[str(mid)] = f.get("id")   # reply -> case lookup
+            s.setdefault("by_message", {})[str(mid)] = f.get("id")   # fast path; pruned to 300
         for extra in (r.get("also_message_ids") or []):              # the detached chart
             s.setdefault("by_message", {})[str(extra)] = f.get("id")
         if incident_on and r.get("ok"):
@@ -675,6 +701,7 @@ def send_pending():
         s["send_failure_alarmed"] = True; save_state(s)
         a = send(f"🔴 <b>{len(failed_now)} alert(s) failed to send this run</b> — check the run log; "
                  f"the findings are in the repo index", silent=False)
+        _log_out(a, "notice")
         if not a.get("ok"):
             print(f"telegram: the send-failure alarm ITSELF failed ({a.get('error')})", file=sys.stderr)
             s["send_failure_alarmed"] = False          # so the next failure still tries
@@ -693,6 +720,7 @@ def send_pending():
         ok = True
         for chunk in _chunks(body, 3800):        # never truncate mid-tag: HTML would 400
             r = send(chunk, silent=True)
+            _log_out(r, "digest")                # so "that was the digest, not a case" is sayable
             if not r.get("ok"):                  # every chunk, not just the last
                 ok = False
         if not ok:
@@ -707,7 +735,7 @@ def failure(url):
     if now - last < 6 * 3600 and s.get("last_run_ok", True):
         print("failure post deduped"); return 0
     s["last_failure_post"] = now; s["last_run_ok"] = False; save_state(s)
-    send(f"🔴 <b>detector run failed</b>\n{url}", silent=False); return 0
+    _log_out(send(f"🔴 <b>detector run failed</b>\n{url}", silent=False), "notice"); return 0
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -716,5 +744,6 @@ if __name__ == "__main__":
     ap.add_argument("--test", metavar="TEXT")
     a = ap.parse_args()
     if a.failure: sys.exit(failure(a.failure))
-    if a.test:    print(send(a.test)); sys.exit(0)
+    if a.test:
+        r = send(a.test); _log_out(r, "test"); print(r); sys.exit(0)
     sys.exit(send_pending())

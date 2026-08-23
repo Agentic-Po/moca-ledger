@@ -75,14 +75,24 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_ACK_USER_IDS: ${{ secrets.TELEGRAM_ACK_USER_IDS }}
+          PRIVATE_REPO_PAT:   ${{ secrets.PRIVATE_REPO_PAT }}
         run: |
           rc=0
-          # Alerts must still go out even when the reply loop or the watchdog is
-          # broken — but the run must go RED afterwards. "Green and blind" is the
-          # failure class this whole channel exists to avoid (council §6.2).
+          # Alerts must still go out even when the reply loop, the watchdog or the
+          # message ledger is broken — but the run must go RED afterwards. "Green and
+          # blind" is the failure class this whole channel exists to avoid (§6.2).
+          #
+          # msglog pull/push brackets the whole block: `pull` so a reply can be matched
+          # against messages sent by earlier runs (the runner is disposable), `push` so
+          # this run's messages are matchable by the next. Unlike the state restore, a
+          # failed pull does NOT stop the job — the ledger is for matching, not for
+          # deciding what to send, and push merges by line union rather than
+          # overwriting, so a partial local copy cannot truncate the remote.
+          python3 notify/msglog.py pull || { echo "msglog pull exited non-zero"; rc=1; }
           python3 notify/commands.py || { echo "commands.py exited non-zero"; rc=1; }
           python3 notify/watchdog.py || { echo "watchdog.py exited non-zero"; rc=1; }
           python3 notify/telegram.py --send-pending || { echo "telegram.py --send-pending exited non-zero"; rc=1; }
+          python3 notify/msglog.py push || { echo "msglog push exited non-zero"; rc=1; }
           exit $rc
 
 

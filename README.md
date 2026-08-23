@@ -61,6 +61,28 @@ The value is a comma- or space-separated list and **replaces** the whole list, s
 the ids already there. Only a repo admin can set it — that is the point, and it is why the
 refusal message names who to ask rather than just saying no.
 
+## The message ledger
+
+Every message the bot sends and every message a person sends it is written to
+`moca-ledger-private:messages/` (`notify/msglog.py`). It exists because a reply that
+cannot be matched to a case used to be discarded in silence — a reply typed at 01:32
+vanished — and because `by_message` in the state file only ever held alerts and is
+pruned to the last 300 entries.
+
+* `index.json` — a bounded map (last 4,000 outbound ids) of message id to case. This
+  is what reply matching reads.
+* `out-YYYY-MM-NN.jsonl` / `in-YYYY-MM-NN.jsonl` — the append-only archive, rolled by
+  month and by size so no single file approaches the Contents API ceiling.
+* `pending-links.jsonl` — associations handed over by the private-side tier-2 job,
+  which commits with git while this pushes through the API.
+
+Resolution follows the parent chain, so a reply to a chart or to a tier-2 detail lands
+on the alert those hang off. When a message genuinely cannot be matched the bot says
+what it *was* ("that was the quiet daily digest") rather than guessing, and nothing is
+recorded against a case. Two permanent limits: Telegram will not enumerate messages
+sent before the ledger existed, and it cannot be asked what an arbitrary id was — for
+those, reply to the message and send `/link <case id>`.
+
 ## Status
 
 `heartbeat.json` carries the last successful run, block lag and detector health.

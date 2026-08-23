@@ -127,6 +127,7 @@ def leg_deliver(tmpdir):
     tmp.write_text(json.dumps({"open": {SYNTH_KEY: f}, "sent": {},
                                "telegram_offset": 0, "version": 1}, indent=1))
     o_state, o_render, o_send = telegram.STATE, telegram.render, telegram.send
+    o_log = telegram._log_out
     try:
         telegram.STATE = tmp
         telegram.render = lambda _f: BANNER
@@ -136,9 +137,15 @@ def leg_deliver(tmpdir):
         # leaving a notification for a message that no longer exists. The real send path
         # is still exercised; only the notification is suppressed.
         telegram.send = lambda text, photo=None, silent=False: o_send(text, photo=photo, silent=True)
+        # The ledger must record this as a SELF-TEST, not as an alert about the
+        # synthetic case: the case is swept a second later, so a person replying to
+        # the banner would otherwise be matched to an id that no longer exists.
+        # Recorded, not skipped — an unrecorded message is an unanswerable one.
+        telegram._log_out = lambda r, kind, case_id=None, reply_to=None: o_log(r, "test", None, reply_to)
         rc = telegram.send_pending()
     finally:
         telegram.STATE, telegram.render, telegram.send = o_state, o_render, o_send
+        telegram._log_out = o_log
 
     s = json.loads(tmp.read_text())
     sent = (s.get("open") or {}).get(SYNTH_KEY) or {}
@@ -176,8 +183,10 @@ def delete_message(mid):
     if r.get("ok"):
         return True
     # Do not leave a message the channel cannot explain.
-    telegram.send("\U0001f9ea The message above was the daily self-test, not an alert. "
-                  "I could not delete it (" + str(r.get("error"))[:60] + ").", silent=True)
+    telegram._log_out(
+        telegram.send("\U0001f9ea The message above was the daily self-test, not an alert. "
+                      "I could not delete it (" + str(r.get("error"))[:60] + ").", silent=True),
+        "test")
     return False
 
 
@@ -246,7 +255,7 @@ def report(ok):
                      "CLEAN": "cleaning up after itself",
                      "RUN": "running at all"}
             parts = sorted({plain.get(n.split()[0], n.split()[0]) for n in failed})
-            telegram.send(
+            telegram._log_out(telegram.send(
                 "\U0001f534 <b>My daily check on myself failed.</b>\n"
                 f"What did not work: <b>{'; '.join(parts) or 'unknown'}</b>\n\n"
                 "This is the check that proves alerts can still reach this channel. Until it "
@@ -254,7 +263,7 @@ def report(ok):
                 "\u2014 so treat quiet as unknown, not as safe.\n"
                 f"Please tell <b>{_owner()}</b>."
                 + (f"\nRun log: {os.environ['RUN_URL']}" if os.environ.get("RUN_URL") else ""),
-                silent=False)
+                silent=False), "notice")
         except Exception as e:
             print(f"selftest: could not post the failure notice ({type(e).__name__})")
 

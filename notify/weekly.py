@@ -29,12 +29,12 @@ def main():
     stamp = {"stamped_at": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
              "run_gap_min_p50": p50, "run_gap_min_p95": p95, "samples": len(gaps)}
     (ROOT / "alerts" / "weekly.json").write_text(json.dumps(stamp, indent=1))
-    from notify.telegram import send
-    send(f"🗓 <b>weekly check</b>\n"
+    from notify.telegram import send, _log_out
+    _log_out(send(f"🗓 <b>weekly check</b>\n"
          f"detector alive · last run {hb.get('run_ts','?')}\n"
          f"observed run gap: p50 {p50} min · p95 {p95} min (n={len(gaps)})\n"
          f"open findings: {hb.get('open_findings')}\n"
-         f"<i>set the healthchecks period from p95; silence on a Monday means both layers are down</i>", silent=True)
+         f"<i>set the healthchecks period from p95; silence on a Monday means both layers are down</i>", silent=True), "health")
     print(json.dumps(stamp))
     return 0
 

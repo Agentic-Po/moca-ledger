@@ -14,7 +14,13 @@ import json, os, pathlib, re, sys, tempfile, time, urllib.error, io, datetime as
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from notify import telegram, commands, state_sync           # noqa: E402
+from notify import telegram, commands, state_sync, msglog   # noqa: E402
+
+# The message ledger is redirected for the whole test process, before any test runs.
+# A synthetic message_id written into the real ledger would collide with a genuine
+# Telegram id and resolve a real person's reply to a fake case.
+_LEDGER = pathlib.Path(tempfile.mkdtemp(prefix="moca-msglog-"))
+msglog.LOCAL, msglog.INDEX, msglog._INDEX = _LEDGER, _LEDGER / "index.json", None
 
 RESULTS = []
 
@@ -409,6 +415,85 @@ def t_price():
           any("price" in l for l in lines), " | ".join(lines)[:120])
 
 
+# ---------------------------------------------------------------- the message ledger
+
+def t_msglog():
+    """Nothing lost, nothing unmatchable — and nothing unbounded."""
+    print("\nthe message ledger")
+    d = pathlib.Path(tempfile.mkdtemp(prefix="moca-msglog-t-"))
+    o_local, o_index, o_ix, o_shard = msglog.LOCAL, msglog.INDEX, msglog._INDEX, msglog.SHARD_MAX
+    try:
+        msglog.LOCAL, msglog.INDEX, msglog._INDEX = d, d / "index.json", None
+
+        msglog.record_out(100, "alert", case_id="c1")
+        msglog.record_out(101, "chart", reply_to=100)          # the detached chart
+        msglog.record_out(102, "digest")
+        msglog.record_out(103, "tier2", reply_to=100)          # the private-side detail
+        msglog.flush()
+        check("a reply to the alert resolves", msglog.resolve(100) == "c1")
+        check("a reply to its chart resolves through the parent",
+              msglog.resolve(101) == "c1", str(msglog.resolve(101)))
+        check("a reply to a tier-2 detail resolves through the parent",
+              msglog.resolve(103) == "c1", str(msglog.resolve(103)))
+        check("a reply to the digest resolves to no case", msglog.resolve(102) is None)
+        check("but the digest can still be NAMED, so the bot need not say 'I cannot tell'",
+              msglog.describe_words(102) == "the quiet daily digest",
+              str(msglog.describe_words(102)))
+        check("a message from before the ledger is honestly unknown",
+              msglog.describe(9999) is None and msglog.resolve(9999) is None)
+
+        # An unmatched reply is STORED, not discarded — that is the whole point.
+        msglog.record_in({"update_id": 9, "message": {"message_id": 500, "text": "did it stop?",
+                                                      "reply_to_message": {"message_id": 9999}}},
+                         outcome="unmatched")
+        check("an unmatched reply is kept so it can be linked afterwards",
+              [r["text"] for r in msglog.unresolved()] == ["did it stop?"])
+        msglog.link(9999, "c1"); msglog.flush()
+        check("/link makes an unmatchable message resolve", msglog.resolve(9999) == "c1")
+
+        # The size failure this file was rewritten to escape (fix-round critic #7).
+        msglog.SHARD_MAX = 2000
+        for i in range(400):
+            msglog.record_out(1000 + i, "alert", case_id=f"c{i}")
+        msglog.flush()
+        shards = sorted(p.name for p in d.glob("out-*.jsonl"))
+        check("the archive rolls to a new shard instead of growing one file",
+              len(shards) > 1, f"{len(shards)} shards")
+        check("no shard is anywhere near the Contents API ceiling",
+              max((d / n).stat().st_size for n in shards) < 1_000_000,
+              f"largest {max((d / n).stat().st_size for n in shards)} bytes")
+
+        msglog.INDEX_KEEP, keep = 50, msglog.INDEX_KEEP
+        msglog._remember(99999, "alert", "cz")
+        msglog.flush(); msglog._INDEX = None
+        ix = json.loads((d / "index.json").read_text())
+        check("the index is capped, not unbounded", len(ix["msgs"]) <= 50, f"{len(ix['msgs'])} entries")
+        check("an id evicted from the index still resolves from the local archive",
+              msglog.resolve(100) == "c1", str(msglog.resolve(100)))
+        msglog.INDEX_KEEP = keep
+
+        # The point of all of it: a reply still lands after `by_message` has aged out.
+        st = {"open": {"0x" + "a" * 40: {"id": "c1", "key": "0x" + "a" * 40, "value": 5}},
+              "by_message": {}}                          # pruned to nothing, as it is at 600 findings
+        k, f = commands.find_by_reply(st, {"reply_to_message": {"message_id": 101}})
+        check("a reply to a chart lands on the case after by_message was pruned",
+              f is not None and f.get("id") == "c1", str(f))
+        k2, f2 = commands.find_by_reply(st, {"reply_to_message": {"message_id": 102}})
+        check("a reply to the digest still does NOT act on a case", f2 is None)
+
+        # Both sides are append-only, so a concurrent write merges rather than truncating.
+        merged = msglog._merge_lines(b'{"a":1}\n{"b":2}\n', b'{"a":1}\n{"c":3}\n')
+        check("a concurrent push merges by line union, it does not overwrite",
+              merged.decode().count("\n") == 3 and b'"b":2' in merged and b'"c":3' in merged,
+              merged.decode().replace("\n", " "))
+    finally:
+        msglog.LOCAL, msglog.INDEX, msglog._INDEX = o_local, o_index, o_ix
+        msglog.SHARD_MAX = o_shard
+
+    check("the ledger is excluded from the PUBLIC repo",
+          "alerts/msglog/" in (ROOT / ".gitignore").read_text())
+
+
 # ---------------------------------------------------------------- concurrency
 
 def t_merge():
@@ -446,7 +531,7 @@ def t_prune():
 
 def main():
     for fn in (t_incident, t_holding, t_alarm, t_post, t_replies, t_reply_time,
-               t_reply_delivery, t_leaks, t_price, t_merge, t_prune):
+               t_reply_delivery, t_leaks, t_price, t_msglog, t_merge, t_prune):
         fn()
     bad = [n for ok, n, _ in RESULTS if not ok]
     print(f"\nnotify: {'FAIL — ' + str(len(bad)) + ' check(s)' if bad else 'OK — all ' + str(len(RESULTS)) + ' checks green'}")
