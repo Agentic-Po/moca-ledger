@@ -160,7 +160,20 @@ def _render_terse(f):
     if f.get("window"): lines.append(f"window {f['window']}")
     for h in (f.get("headline") or [])[:3]: lines.append(f"• {h}")
     if f.get("recommended_action"): lines.append(f"\n➡️ {f['recommended_action']}")
-    if f.get("owner"): lines.append(f"owner: {f['owner']}")
+    # The fallback must not be the one renderer still printing a placeholder as if it
+    # were an answer. If explain.py is unavailable we say UNASSIGNED: understating who
+    # can pause is recoverable, overstating it is the 20 August failure.
+    owner_line = "who can pause: UNASSIGNED — nobody has agreed to stop a payout"
+    try:
+        from explain import pause_terse
+        owner_line = pause_terse(f)
+    except Exception:
+        try:
+            from notify.explain import pause_terse
+            owner_line = pause_terse(f)
+        except Exception as ex:
+            print(f"explain.pause_terse unavailable ({ex!r}) — using the literal", file=sys.stderr)
+    lines.append(owner_line)
     lines.append(f"\n<i>as of block {f.get('as_of_block','?')}</i>")
     reply = "<b>Reply to this message with:</b>  contained · reported · watching · closed"
     try:                                  # this path exists because explain.py broke

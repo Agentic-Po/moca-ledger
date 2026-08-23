@@ -711,9 +711,99 @@ def t_cluster():
           "no single one of them took more than 12" in m2, m2[:140])
 
 
+# ---------------------------------------------------------------- who can pause
+
+def t_owner():
+    """Whether a page admits that nobody can stop the money.
+
+    On 20 August 2.4M of the 2.66M MOCA was paid out AFTER the first alert fired:
+    authority, not lead time, was the bottleneck. The page then printed
+    "Who to ask  Po (interim)" — a placeholder that reads as an answer, which is
+    worse than printing nothing (phase3 critic #9)."""
+    print("\nwho can pause")
+    from notify import explain
+
+    thr = json.loads((ROOT / "detect" / "thresholds.json").read_text())
+    ks = thr.get("kill_switch") or {}
+    check("thresholds.json carries a kill_switch block", isinstance(thr.get("kill_switch"), dict),
+          ",".join(sorted(ks)))
+    named = bool(ks.get("owner")) and not explain._PLACEHOLDER.search(str(ks.get("owner")))
+    check("a name in the committed file also carries its dated commitment",
+          (not named) or all(ks.get(k) for k in explain._KS_REQUIRED), str(ks.get("owner")))
+
+    real = explain._thresholds
+
+    def bed(**kw):
+        t2 = dict(thr)
+        t2["kill_switch"] = kw
+        for name in ("explain", "notify.explain"):   # telegram.py may import either
+            if sys.modules.get(name) is not None:
+                sys.modules[name]._thresholds = lambda: t2
+
+    def unbed():
+        for name in ("explain", "notify.explain"):
+            if sys.modules.get(name) is not None:
+                sys.modules[name]._thresholds = real
+
+    page = _finding(1, tier="page", signal="10", owner="Po (interim) — @Po_Chu on Telegram",
+                    threshold=50, value=148, detail="148/60min", window="60min")
+    notif = _finding(2, tier="notify", signal="10n", owner="Po (interim) — @Po_Chu on Telegram",
+                     threshold=50, value=60, detail="60/6h", window="6h")
+    try:
+        bed(owner=None, contact=None, commitment_min=None, agreed_ts=None)
+        m = explain.humanise(page)
+        check("with nobody named, a page says UNASSIGNED in so many words", "UNASSIGNED" in m)
+        check("a page no longer tells Po to ask Po", "Who to ask" not in m)
+        check("the UNASSIGNED block says what an empty kill switch cost in August",
+              "2.4M" in m and "20 August" in m)
+        check("the bot's own contact is labelled as unable to stop a payout",
+              "cannot stop a payout" in m)
+        check("a notify alert says it too", "UNASSIGNED" in explain.humanise(notif))
+        check("the fallback renderer says UNASSIGNED as well",
+              "UNASSIGNED" in telegram._render_terse(page))
+
+        bed(owner="Po (interim)", contact="@Po_Chu", commitment_min=30, agreed_ts="2026-08-23")
+        check("a placeholder typed into kill_switch.owner is still UNASSIGNED",
+              explain.kill_switch() is None and "UNASSIGNED" in explain.humanise(page))
+
+        bed(owner="A Real Person", contact="@handle", commitment_min=None, agreed_ts="2026-08-23")
+        check("a kill switch with no agreed response time is still UNASSIGNED",
+              explain.kill_switch() is None and "UNASSIGNED" in explain.humanise(page))
+
+        bed(owner="A Real Person", contact="@handle on Telegram", commitment_min=30,
+            agreed_ts="2026-08-24T09:00:00+00:00", agreed_by="Po")
+        m2 = explain.humanise(page)
+        check("a real owner prints the name and the minutes they agreed to",
+              "A Real Person" in m2 and "30 minutes" in m2 and "UNASSIGNED" not in m2)
+        check("the fallback renderer prints the real owner too",
+              "A Real Person" in telegram._render_terse(page))
+    finally:
+        unbed()
+
+    # The name may arrive in the THRESHOLDS_JSON secret instead of the committed file,
+    # because detect/thresholds.json is public and the one person who can stop the
+    # money should be named in the group, not on the internet.
+    old_env = os.environ.get("THRESHOLDS_JSON")
+    os.environ["THRESHOLDS_JSON"] = json.dumps(
+        {"kill_switch": {"owner": "A Real Person", "contact": "@handle",
+                         "commitment_min": 30, "agreed_ts": "2026-08-24T09:00:00+00:00"}})
+    try:
+        check("the owner can arrive from the secret, so the public file need not name them",
+              (explain.kill_switch() or ("",))[0] == "A Real Person")
+        os.environ["THRESHOLDS_JSON"] = "{not json"
+        check("a THRESHOLDS_JSON that does not parse leaves the page UNASSIGNED, not wrong",
+              explain.kill_switch() is None)
+    finally:
+        if old_env is None:
+            os.environ.pop("THRESHOLDS_JSON", None)
+        else:
+            os.environ["THRESHOLDS_JSON"] = old_env
+
+
 def main():
     for fn in (t_incident, t_holding, t_alarm, t_post, t_replies, t_reply_time,
                t_reply_delivery, t_dead_copy, t_gate_failure, t_shadow, t_cluster,
+               t_owner,
                t_leaks,
                t_price, t_msglog,
                t_merge, t_prune):

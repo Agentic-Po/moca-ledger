@@ -172,6 +172,11 @@ def diff_state(state, findings, ctx, fresh_h=24):
         d["mindset_source"] = ctx.mindset_source
         d["unit_source"] = ctx.unit_source.get(S.day_str(f.ts), "frozen")
         d["type_verified"] = False
+        # Who runs the bot, NOT who can pause a payout. Those were one field until
+        # 2026-08-23, so a page read "Who to ask  Po (interim)" — the alert telling Po
+        # to ask Po. The kill switch is read at send time from thresholds.kill_switch by
+        # notify/explain.py:pause_lines(); it is a fact about the org on the day the
+        # message goes out, not about the finding, and stamping it froze it.
         d["owner"] = ctx.thr.get("escalation_owner") or d.get("owner") or "UNASSIGNED"
         stale = (ctx.t1 - f.ts) > fresh_h * 3600
         cur = state["open"].get(fid)

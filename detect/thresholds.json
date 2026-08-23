@@ -69,5 +69,13 @@
   "cashout_sound_min": 1000
  },
  "escalation_owner": "Po (interim) \u2014 @Po_Chu on Telegram",
- "escalation_note": "Interim owner until platform names someone who can pause a creator's reward. Replace both fields together."
+ "escalation_note": "Who runs this bot and can add someone to the on-call list. This is NOT the kill switch: Po cannot stop a Treasury payout. notify/commands.py names this person when it refuses a command, so a colleague who is turned away has a route in.",
+ "kill_switch": {
+  "note": "The platform person who can pause one creator's rewards. On 2026-08-20, 2,400,000 of the 2,660,046 MOCA left AFTER the first alert fired: authority, not lead time, was the bottleneck. owner, contact, commitment_min and agreed_ts must be filled together, from a real commitment recorded in council/un-pause-runbook.md in the private repo. If any is empty, or the owner still reads interim/TBD/UNASSIGNED, every page prints the UNASSIGNED block loudly. Do not fill these in to make that line go away. This file is PUBLIC: prefer setting the block through the THRESHOLDS_JSON secret so the one person who can stop the money is named in the group and not on the internet.",
+  "owner": null,
+  "contact": null,
+  "commitment_min": null,
+  "agreed_ts": null,
+  "agreed_by": null
+ }
 }

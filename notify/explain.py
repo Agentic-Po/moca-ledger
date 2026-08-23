@@ -19,6 +19,7 @@ Two rules the copy in this file obeys:
     operator the exact constraint they have to stay under.
 """
 import datetime as dt
+import json
 import os
 import re
 import sys
@@ -661,6 +662,122 @@ def money_lines(f):
             f"<i>Treasury payouts to this wallet only \u00b7 {HEDGE} \u00b7 {note}</i>"]
 
 
+# ------------------------------------------------------------------ who can pause
+
+#: The four fields detect/thresholds.json:kill_switch must all carry before any
+#: message may claim that somebody can stop a payout. Half a block is not an owner.
+_KS_REQUIRED = ("owner", "contact", "commitment_min", "agreed_ts")
+
+#: Words that still mean "nobody". `escalation_owner` reads "Po (interim)" today and
+#: renders as a name, which is the worse failure: the reader sees the question
+#: answered. A stand-in typed into kill_switch.owner must not silence the UNASSIGNED
+#: block either, so the placeholder test lives in code, not in a convention.
+_PLACEHOLDER = re.compile(r"unassigned|interim|\btbd\b|\btba\b|\bnobody\b|\bnone\b|\?\?", re.I)
+
+#: What notify/telegram.py prints when it cannot import this module at all.
+PAUSE_UNASSIGNED_TERSE = "who can pause: UNASSIGNED — nobody has agreed to stop a payout"
+
+
+def _thresholds():
+    """detect/thresholds.json with the THRESHOLDS_JSON runtime override applied.
+
+    The override matters more here than anywhere else in the file: the kill switch is
+    a real person's name and handle, and detect/thresholds.json is in the PUBLIC repo.
+    Naming the one person who can stop the money, world-readably, hands an operator
+    somebody to social-engineer. So the committed default stays null — which is also
+    what CI therefore tests — and the live name can arrive in the secret instead.
+
+    Never silent: a page must not quietly acquire a pause owner, or quietly lose one,
+    because a file or a secret failed to parse. Both failures resolve to UNASSIGNED,
+    which understates what we can do — the recoverable direction.
+    """
+    try:
+        with open(os.path.join(ROOT, "detect", "thresholds.json")) as fh:
+            thr = json.load(fh)
+    except Exception as ex:
+        print(f"explain: cannot read thresholds.json ({ex!r}) — treating the kill "
+              "switch as UNASSIGNED", file=sys.stderr)
+        thr = {}
+    env = os.environ.get("THRESHOLDS_JSON")
+    if env:
+        try:
+            thr.update(json.loads(env))
+        except Exception as ex:
+            print(f"explain: THRESHOLDS_JSON override IGNORED, it does not parse "
+                  f"({type(ex).__name__}); the committed defaults are live", file=sys.stderr)
+    return thr
+
+
+def kill_switch():
+    """(name, contact, minutes) of the platform person who can pause a creator's
+    rewards, or None when there is not one yet.
+
+    Read at send time rather than stamped on the finding: who holds this authority is
+    a fact about the organisation on the day the message goes out, so a finding first
+    seen before the name existed would otherwise print UNASSIGNED for the rest of its
+    life. It also adds no bytes to a state file already capped at 900,000 B.
+    """
+    ks = _thresholds().get("kill_switch") or {}
+    if any(not ks.get(k) for k in _KS_REQUIRED):
+        return None
+    if _PLACEHOLDER.search(str(ks.get("owner"))):
+        return None
+    mins = _int(ks.get("commitment_min"))
+    if not mins:
+        # A name with no readable number of minutes is not a commitment. Failing
+        # closed here prints UNASSIGNED, which is true; failing open would print a
+        # name beside a promise nobody made.
+        return None
+    return (str(ks["owner"]), str(ks["contact"]), mins)
+
+
+def _bot_contact():
+    """thresholds.escalation_owner — who runs this bot. Not who can pause anything."""
+    return _thresholds().get("escalation_owner") or "nobody named"
+
+
+def pause_lines(f):
+    """The kill-switch block for a message, as lines. Never empty.
+
+    Every page ends by asking for a pause, and until now it then printed
+    "Who to ask  Po (interim)" — the alert telling Po to ask Po (council §5, vote 8).
+    On 20 August 2.4M of the 2.66M MOCA was paid out AFTER the first alert fired
+    because nobody held this authority, so an unheld kill switch is printed as unheld,
+    loudly, and the bot's own contact is labelled as what it is.
+
+    This says who a person should go and talk to. Nothing here pauses anything: the
+    bot informs and never acts (council §6.1).
+    """
+    ks = kill_switch()
+    if ks:
+        name, contact, mins = ks
+        within = f", agreed to pause within {mins} minutes" if mins else ""
+        # An imperative, not a fact. The line this replaced said "Who to ask", and a
+        # bare name reads as provenance — somebody at 03:00 has to be told to act.
+        return ["", f"<b>Who can pause</b>  Ask {_esc(name)} — {_esc(contact)}{within}"]
+    who = _esc(_bot_contact())
+    if f.get("tier") == "page":
+        return ["", "⛔ <b>Who can pause  UNASSIGNED</b>",
+                "<i>No platform person has agreed to stop a creator's rewards, and there is no "
+                "agreed response time. Nothing in this channel can pause anything — a person "
+                "has to ask by hand and find whoever is awake. On 20 August 2.4M of the 2.66M "
+                "MOCA was paid out after the first alert fired, for this reason.</i>",
+                f"<i>{who} runs this bot: they can raise it and can add you to the on-call list, "
+                "but they cannot stop a payout.</i>"]
+    return ["", "<b>Who can pause</b>  ⛔ UNASSIGNED — nobody has agreed to stop a payout; "
+                f"{who} runs this bot and cannot stop one either"]
+
+
+def pause_terse(f):
+    """One line of the same fact, for notify/telegram.py's fallback renderer."""
+    ks = kill_switch()
+    if ks:
+        name, contact, mins = ks
+        return (f"who can pause: {_esc(name)} — {_esc(contact)}"
+                + (f" (within {mins} min)" if mins else ""))
+    return PAUSE_UNASSIGNED_TERSE
+
+
 # ------------------------------------------------------------------ the message
 
 def humanise(f):
@@ -698,8 +815,7 @@ def humanise(f):
                   "another wallet or another route."]
         if f.get("key", "").startswith("0x"):
             lines += ["", f"Wallet  <code>{f['key']}</code>"]
-        if f.get("owner"):
-            lines += ["", f"Who to ask  {f['owner']}"]
+        lines += pause_lines(f)
         return "\n".join(lines) + "\n\n" + _footer(f)
 
     if esc == "still growing since you reported it":
@@ -717,6 +833,7 @@ def humanise(f):
                   "you if it holds."]
         if f.get("key", "").startswith("0x"):
             lines += ["", f"Wallet  <code>{f['key']}</code>"]
+        lines += pause_lines(f)
         return "\n".join(lines) + "\n\n" + _footer(f)
 
     normal = _normal_for(f, spec)
@@ -733,8 +850,7 @@ def humanise(f):
         lines += ["", f"Wallet  <code>{f['key']}</code>"]
     elif f.get("key"):
         lines += ["", f"Scope  {f['key']}"]
-    if f.get("owner"):
-        lines += ["", f"Who to ask  {f['owner']}"]
+    lines += pause_lines(f)
 
     return "\n".join(lines) + "\n\n" + _footer(f)
 

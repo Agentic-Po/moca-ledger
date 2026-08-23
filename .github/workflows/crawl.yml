@@ -52,6 +52,10 @@ jobs:
         env:
           MINDSET_SALT:    ${{ secrets.MINDSET_SALT }}
           EXIT_WATCH_JSON: ${{ secrets.EXIT_WATCH_JSON }}
+          # detect/thresholds.json has documented this override since it was written and
+          # nothing ever passed it, so shadow mode had no switch. Unset it is an empty
+          # string and nothing changes; malformed, signals/__init__.py now says so.
+          THRESHOLDS_JSON: ${{ secrets.THRESHOLDS_JSON }}
         run: |
           if [ -n "$EXIT_WATCH_JSON" ]; then
             printf '%s' "$EXIT_WATCH_JSON" > labels/exit_watch.json
@@ -89,6 +93,10 @@ jobs:
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_ACK_USER_IDS: ${{ secrets.TELEGRAM_ACK_USER_IDS }}
           PRIVATE_REPO_PAT:   ${{ secrets.PRIVATE_REPO_PAT }}
+          # The pause authority is a real person's name and handle, and this repo is
+          # public. explain.py reads the block from here first so the one person who can
+          # stop the money is named in the group and not on the internet.
+          THRESHOLDS_JSON:    ${{ secrets.THRESHOLDS_JSON }}
           BEHAVIOUR_GATE:     ${{ steps.behaviour_gate.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
