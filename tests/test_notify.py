@@ -637,6 +637,30 @@ def t_no_intent_claims():
           bool(bad.search("Movement means the operator is active again.")))
 
 
+def t_cases_shows_what_is_open():
+    """The one command for 'what is waiting on me' must not be blind to the record."""
+    print("\nwhat /cases can see")
+    seeded = {"id": "aaa", "key": "0x" + "a" * 40, "signal": "10", "tier": "page",
+              "value": 5, "ack_by": "go-live-seed"}
+    live = {"id": "bbb", "key": "0x" + "b" * 40, "signal": "10", "tier": "page",
+            "value": 5, "ack_by": "7788"}
+    old_ = {"id": "ccc", "key": "0x" + "c" * 40, "signal": "10", "tier": "page",
+            "value": 5, "ack_by": "go-live-seed", "backfill": True}
+    st = {"open": {"a": dict(seeded), "b": dict(live), "c": dict(old_)}}
+    t = commands.cases_text(st)
+    check("a case the bootstrap stamped is still shown", "aaa" in t, t[:80])
+    check("a case a PERSON acked is not", "bbb" not in t)
+    check("August backfill is not listed with live cases", "ccc" not in t)
+    check("...but its existence is stated, not silently dropped",
+          "not listed here" in t, t[-160:])
+    check("a person's decision replaces the bootstrap stamp",
+          (lambda f: (commands.set_status({"open": {"k": f}}, "aaa", "contained", "999"),
+                      f.get("ack_by"))[1])(dict(seeded)) == "999")
+    check("but a genuine earlier ack by someone else is preserved",
+          (lambda f: (commands.set_status({"open": {"k": f}}, "bbb", "contained", "999"),
+                      f.get("ack_by"))[1])(dict(live)) == "7788")
+
+
 def t_contained_means_contained():
     """`contained` must mean silence-unless-it-moves, not a page every run."""
     print("\nwhat contained does")
@@ -1360,7 +1384,8 @@ def main():
                t_replies, t_reply_time,
                t_reply_delivery, t_dead_copy, t_local_send_guard,
                t_platform_signals_can_speak_twice, t_cadence_honesty,
-               t_no_intent_claims, t_contained_means_contained, t_heartbeat,
+               t_no_intent_claims, t_cases_shows_what_is_open,
+               t_contained_means_contained, t_heartbeat,
                t_gate_failure, t_shadow, t_cluster,
                t_owner, t_cut_list, t_selftest,
                t_leaks,

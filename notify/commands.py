@@ -237,8 +237,12 @@ def set_status(s, ident, status, uid, note="", when=None):
     f["value_at_status"] = _value_as_of(f, at)
     f["pending_send"] = False
     if status in ("reported", "contained", "closed", "watching"):
-        f["ack_by"] = f.get("ack_by") or uid          # stops the routine repeat
-        f["ack_ts"] = f.get("ack_ts") or at.isoformat()
+        # A person's decision REPLACES a bootstrap stamp. `or` alone kept ack_by as
+        # "go-live-seed" for a case somebody had just adjudicated, so the record said a
+        # housekeeping pass had handled it. It also preserves a genuine earlier ack.
+        prior = f.get("ack_by")
+        f["ack_by"] = uid if (not prior or prior == SEED_ACK) else prior
+        f["ack_ts"] = at.isoformat() if (not prior or prior == SEED_ACK) else f.get("ack_ts")
     return k, f
 
 
@@ -266,13 +270,39 @@ def _plain(f):
     return f.get("signal") or "an alert with no description"
 
 
+SEED_ACK = "go-live-seed"      # the 2026-08-22 bootstrap pass, not a human decision
+
+
+def _human_ack(f):
+    """Did a PERSON decide this, or did the bootstrap stamp it?
+
+    429 of 434 findings carry ack_by="go-live-seed" from the pass that stopped the
+    channel re-paging all of August on its first run. Treating that as a human
+    decision made /cases show 3 findings out of 434 — so the one command a person
+    has for finding out what is open was blind to almost everything the system held,
+    including 22 page-tier findings. Same root cause as the platform-wide pagers that
+    were muted for a day: a bootstrap is not a decision."""
+    return bool(f.get("ack_role") or (f.get("ack_by") and f.get("ack_by") != SEED_ACK))
+
+
 def cases_text(s):
     now = dt.datetime.now(dt.UTC)
-    cases = [f for f in (s.get("open") or {}).values()
+    op = (s.get("open") or {}).values()
+    # `backfill` is the detector's own word for "recorded, never sent, older than the
+    # freshness window" — the August incident. It is history, not a queue, and it is
+    # counted below rather than listed, because 373 rows would bury the live ones.
+    cases = [f for f in op
              if f.get("status") in ("reported", "contained", "watching")
-             or (f.get("tier") in ("page", "notify") and not (f.get("ack_by") or f.get("ack_role")))]
+             or (f.get("tier") in ("page", "notify") and not _human_ack(f)
+                 and not f.get("backfill"))]
+    history = [f for f in op if f.get("backfill") and f.get("tier") in ("page", "notify")]
+    hist_line = (f"\n<i>{len(history)} older page/notify finding(s) from before this channel "
+                 f"was live are in the record but not listed here — they were never sent. "
+                 f"Ask for any of them by id.</i>" if history else "")
     if not cases:
-        return "✅ <b>No open cases.</b>\nNothing is waiting on a person right now."
+        return ("\u2705 <b>Nothing is waiting on a person right now.</b>\n"
+                "<i>That is not an all-clear — it means nothing has crossed a level that "
+                "asks for a decision.</i>" + hist_line)
     ordered = sorted(cases, key=lambda x: str(x.get("status_ts") or x.get("first_ts") or ""))
     shown, extra = ordered[:CASES_MAX], len(ordered) - CASES_MAX
     L = [f"<b>📁 Open cases — {len(ordered)}</b>", ""]
@@ -293,6 +323,7 @@ def cases_text(s):
             L.append(f"    \"{_esc(f['status_note'])}\"")
     if extra > 0:
         L += ["", f"<i>{extra} more, oldest shown first. Act on these and they drop off the list.</i>"]
+    L += [hist_line] if hist_line else []
     L += ["", "<i>/reported &lt;id&gt; · /contained &lt;id&gt; · /close &lt;id&gt; · /watching &lt;id&gt;</i>"]
     return "\n".join(L)
 
