@@ -81,6 +81,19 @@ def main():
                 bad2 += 1
     check("G4 zero page/notify fires on excluded creators", bad2 == 0, f"{bad2} fires")
 
+    # ---- G6 #14 is a FIELD, not an alert (council §5, vote 5). Nothing emits it,
+    # so notify/explain.py no longer carries copy for it. If that ever changes, the
+    # channel would render a signal through the terse fallback — which announces
+    # itself as a failure — for an alert whose own recommended action was "Nothing."
+    n14 = len(ctx.fires.get("14", []))
+    check("G6 #14 emits no findings", n14 == 0, f"{n14} fires")
+    xs = sorted(ctx.outflow_x.values())
+    check("G6 #14 still computes the multiple run.py stamps on the heartbeat",
+          len(xs) > 1000, f"{len(xs)} slot(s)")
+    # `med > 0` alone let a ~1e-18 denominator through and produced 8.4e17.
+    check("G6 the outflow multiple is a number a person could read",
+          xs and xs[-1] < 100000, f"max {xs[-1]:,.1f}" if xs else "none")
+
     # ---- G5 nothing outside the data may set S-A's bar.
     # labels-lite.json is read by exactly one line of detector code — the organic
     # filter in slow_harvest — so while the baseline was a max-of-maxima, ONE class

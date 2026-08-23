@@ -420,6 +420,34 @@ def t_price():
           any("price" in l for l in lines), " | ".join(lines)[:120])
 
 
+def t_dead_copy():
+    """No alert card may exist for a signal that can never fire."""
+    print("\ncopy for alerts that cannot happen")
+    from notify import explain
+    emitted = set()
+    pat = re.compile(r"""Finding\(\s*["']([^"']+)""")
+    for mod in (ROOT / "detect" / "signals").glob("*.py"):
+        emitted |= set(pat.findall(mod.read_text()))
+    # Signals built from a variable name are resolved by hand; keep the list honest
+    # rather than silently passing because a regex missed one.
+    # Signals whose id is built from a variable rather than a literal — resolved by
+    # hand so a regex miss cannot silently pass the whole check.
+    dynamic = {"10i", "10n", "S-Q2"}
+    for sid in sorted(explain.SIGNALS):
+        if sid in dynamic or sid.startswith("S-") or not sid.isdigit():
+            continue
+        check(f"signal {sid} has a card because something can emit it",
+              sid in emitted, "no Finding(...) constructs it" if sid not in emitted else "")
+    # Both cut for the same reason: their own recommended action was "Nothing", and a
+    # card for an alert that can never arrive is copy a reader can still be shown by
+    # the terse fallback — which announces itself as a failure — for no event at all.
+    for gone in ("14", "7"):
+        check(f"#{gone}'s alert card is gone", gone not in explain.SIGNALS
+              and gone not in explain.DIGEST_LINE)
+    check("the safety boundary on composite is named as one",
+          "SAFETY BOUNDARY" in (ROOT / "detect" / "signals" / "composite.py").read_text())
+
+
 def t_gate_failure():
     """A red behaviour gate must not be able to take the channel dark in silence."""
     print("\nwhen my own checks fail")
@@ -577,7 +605,7 @@ def t_prune():
 
 def main():
     for fn in (t_incident, t_holding, t_alarm, t_post, t_replies, t_reply_time,
-               t_reply_delivery, t_gate_failure, t_leaks, t_price, t_msglog,
+               t_reply_delivery, t_dead_copy, t_gate_failure, t_leaks, t_price, t_msglog,
                t_merge, t_prune):
         fn()
     bad = [n for ok, n, _ in RESULTS if not ok]

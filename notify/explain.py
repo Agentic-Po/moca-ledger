@@ -147,23 +147,6 @@ SIGNALS = {
         "do": "Nothing, unless this wallet also appears in another alert.",
         "normal": "Withdrawing is a normal, allowed feature and happens every day.",
     },
-    "7":  {"title": "A creator's Skills are equipped but never used",
-           "what": "This creator's Skills are being equipped but almost never actually used.",
-           "why": "Equips earn the creator ~$1 each; invokes are what real usage looks like. Equips without invokes suggest the equipping was the point.",
-           "do": "Nothing on its own — useful context when judging another alert.",
-           "normal": "Real usage produces invokes as well as equips."},
-    "14": {"title": "Treasury outflow is above its usual level",
-           "what": "The Treasury paid out more than its usual amount for this time of day.",
-           "why": "On its own this is normal noise — in August it stayed inside its usual range the whole time, which is why it caught nothing. It only means something read next to another alert.",
-           "do": "Nothing. Read it alongside the other alerts.",
-           "normal": "Treasury outflow moves up and down through the day; a reading like this on its own is ordinary."},
-    "composite": {
-        "title": "Several warning signs are pointing at the same wallets",
-        "what": "More than one alert has fired on connected wallets within a few hours.",
-        "why": "Individually each sign can be innocent. Together, on connected wallets and within a few hours, they are the shape the August incident had.",
-        "do": "Treat this like a page: read the individual alerts for these wallets, then decide whether to ask for a pause.",
-        "normal": "Alerts normally fire alone, on unconnected wallets.",
-    },
 }
 
 FALLBACK = {
@@ -681,8 +664,6 @@ DIGEST_LINE = {
     "S-G": ("Watch-list wallets moved", "{n} wallets from the August incident moved MOCA"),
     "10i": ("One creator took a large share (our own creators included)", "{n} window(s) where a single creator took most of the equip rewards"),
     "9":   ("Many first-time payout recipients", "{n} hour(s) with an unusual number of brand-new wallets paid"),
-    "7":   ("Skills equipped but not used", "{n} creator(s) earning equips with almost no invokes"),
-    "14":  ("Treasury outflow above its usual level", "{n} window(s) above the normal range"),
     "S-X": ("Balances moved in incident-linked wallets", "{n} wallet(s) changed balance"),
 }
 

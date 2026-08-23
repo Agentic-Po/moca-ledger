@@ -11,6 +11,10 @@ import collections
 import hashlib
 from . import register, Finding, SLOT, H, utc
 
+# A SAFETY BOUNDARY, not a tuning list. Composite can raise a tier, so any signal
+# named here can reach the channel THROUGH it — including one that is shadowed or
+# uncalibrated on its own. Adding a signal to this set is a decision to let it page
+# indirectly; leaving it out is how a new or shadowed signal stays contained.
 MEMBERS = {"10", "10n", "11", "4b", "S-C", "S-A", "S-Q2"}
 
 
