@@ -656,6 +656,26 @@ def t_contained_means_contained():
     src = (ROOT / "detect" / "run.py").read_text().split('elif status == "contained":')[1].split("elif")[0]
     check("and it does so strictly", "strict=True" in src)
 
+    # A case shouts once per LEVEL, not once per run at an elevated level. Without this
+    # the first escalation is right and every run after it is a repeat, because the
+    # human's baseline never moves while the finding stays up.
+    check("the escalation baseline is the highest level already announced",
+          RUN._escalation_baseline({"value_at_status": 119.0, "value_at_escalation": 130.0}) == 130.0)
+    check("before any escalation it is simply what the person saw",
+          RUN._escalation_baseline({"value_at_status": 119.0}) == 119.0)
+    check("an escalated case does not re-announce the same level",
+          not RUN._grew({"value": 130.0},
+                        RUN._escalation_baseline({"value_at_status": 119.0,
+                                                  "value_at_escalation": 130.0}),
+                        factor=1.0, strict=True))
+    check("but a further move past it does",
+          RUN._grew({"value": 200.0},
+                    RUN._escalation_baseline({"value_at_status": 119.0,
+                                              "value_at_escalation": 130.0}),
+                    factor=1.0, strict=True))
+    check("the field survives the per-run rewrite of every finding",
+          "value_at_escalation" in (ROOT / "detect" / "run.py").read_text().split("keep = {")[1][:400])
+
 
 def t_heartbeat():
     """Proof of life: it must prove, and it must never reassure."""
@@ -664,7 +684,8 @@ def t_heartbeat():
         real = telegram._hb_doc
         try:
             telegram._hb_doc = lambda: {"ledger_last": "2026-08-23 14:52", "rows_total": 169822,
-                                        "lag_blocks": 67, "mindset_age_h": 29.0, "detect_ok": True,
+                                        "lag_blocks": 67, "mindset_age_h": 3.0,
+                                        "mindset_source": "hashed", "detect_ok": True,
                                         "fires_last_24h_total": 7}
             telegram.heartbeat(force=True)
             body = SENT[-1]["text"]
@@ -685,11 +706,26 @@ def t_heartbeat():
             # ALIVE BUT BLIND is the case that must never read as reassurance
             SENT.clear()
             telegram._hb_doc = lambda: {"ledger_last": "2026-08-23 14:52", "rows_total": 169822,
-                                        "lag_blocks": 5000, "mindset_age_h": 70.0, "detect_ok": True}
+                                        "lag_blocks": 5000, "mindset_age_h": 70.0,
+                                        "mindset_source": "hashed-stale", "detect_ok": True}
             telegram.heartbeat(force=True)
             blind = SENT[-1]["text"]
             check("running-but-blind does not say 'still watching'", "Still watching" not in blind)
             check("running-but-blind names why it cannot see", "blocks behind" in blind)
+
+            # The case that shipped wrong: the DETECTOR had already declared itself stale
+            # and fallen back, while this message carried its own laxer threshold and
+            # posted a green tick. One question, one authority.
+            SENT.clear()
+            telegram._hb_doc = lambda: {"ledger_last": "2026-08-23 14:52", "rows_total": 169822,
+                                        "lag_blocks": 67, "mindset_age_h": 29.0,
+                                        "mindset_source": "hashed-stale", "detect_ok": True}
+            telegram.heartbeat(force=True)
+            fallen = SENT[-1]["text"]
+            check("a detector that has FALLEN BACK is never reported as still watching",
+                  "Still watching" not in fallen, fallen.splitlines()[0])
+            check("...and the message says it fell back, in words",
+                  "fallen back" in fallen)
             check("running-but-blind tells the reader quiet means unknown",
                   "unknown rather than quiet" in blind)
         finally:

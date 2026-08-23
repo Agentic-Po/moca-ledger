@@ -207,7 +207,8 @@ def diff_state(state, findings, ctx, fresh_h=24):
             esc = now > was or (d.get("escalation") and d["escalation"] != cur.get("escalation"))
             keep = {k: cur[k] for k in ("pending_send", "backfill", "ack_role", "ack_by", "ack_ts", "ack_note",
                                         "snooze_until", "last_sent", "send_ok", "view_png",
-                                        "status", "status_ts", "status_by", "status_note", "value_at_status") if k in cur}
+                                        "status", "status_ts", "status_by", "status_note",
+                                        "value_at_status", "value_at_escalation") if k in cur}
             prev_value = cur.get("value")
             cur.update(d)
             cur.update(keep)
@@ -233,16 +234,18 @@ def diff_state(state, findings, ctx, fresh_h=24):
                 # done nothing — reproduced on the live record before this was changed.
                 # That is the precise opposite of what the verb is for, and of what a
                 # person means when they say "we fixed it, tell me if it comes back".
-                if _grew(cur, cur.get("value_at_status"), factor=1.0, strict=True):
+                if _grew(cur, _escalation_baseline(cur), factor=1.0, strict=True):
                     cur["pending_send"] = True
                     cur["escalation"] = "activity after containment"
                     cur["tier"] = "page"
+                    cur["value_at_escalation"] = cur.get("value")   # do not shout twice
                     escalated.append(f)
             elif status in ("reported", "watching"):
                 # the team knows — only speak up if it is materially worse
-                if _grew(cur, cur.get("value_at_status"), factor=1.5):
+                if _grew(cur, _escalation_baseline(cur), factor=1.5):
                     cur["pending_send"] = True
                     cur["escalation"] = "still growing since you reported it"
+                    cur["value_at_escalation"] = cur.get("value")   # same disease, same cure
                     escalated.append(f)
             elif esc and not stale:
                 cur["pending_send"] = True
@@ -263,6 +266,25 @@ def diff_state(state, findings, ctx, fresh_h=24):
 
 RE_ARM_FACTOR = 1.5     # "materially worse", the same bar the reported/watching branch uses
 SEED_ACK = "go-live-seed"   # the 2026-08-22 bootstrap pass, not a human decision
+
+
+def _escalation_baseline(cur):
+    """The level a person has already been told about.
+
+    Their status value, OR the value of the most recent escalation if we have since
+    shouted about a higher one. Both matter: comparing only against value_at_status
+    means the FIRST escalation is right and every one after it is a repeat, because
+    the human's baseline never moves while the finding stays elevated. Reproduced:
+    a contained case that moved 119 -> 130 once then went quiet paged on every run
+    for as long as it stayed at 130. value_at_status is left untouched so the record
+    still says what the person saw when they decided."""
+    vals = []
+    for k in ("value_at_status", "value_at_escalation"):
+        try:
+            vals.append(float(cur.get(k)))
+        except (TypeError, ValueError):
+            continue
+    return max(vals) if vals else None
 
 
 def _stable_key(d):
