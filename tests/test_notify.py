@@ -570,6 +570,34 @@ def t_platform_signals_can_speak_twice():
     check("with no send history it falls back rather than crashing",
           RUN._last_alerted_value(dict(seeded)) is None)
 
+    # Growth alone is not enough. #15 means "the payout worker hit its ceiling" — an
+    # EVENT — and a second saturation at the same level is not 1.5x of the first. A
+    # seeded record that was never delivered is therefore treated as absent entirely,
+    # so the next fire arms itself the way any genuinely new finding would.
+    st = {"open": {"k": dict(seeded)}}
+    fresh = dict(seeded, value=1796.0)
+    class _F:
+        id = "4c8de53e7f"
+        _state = fresh
+        signal, key, tier, ts = "15", "platform", "page", 1787000000
+    check("a seeded, never-sent, platform-keyed record is not treated as a live case",
+          RUN._stable_key(seeded) and not seeded.get("last_sent")
+          and seeded.get("ack_by") == RUN.SEED_ACK)
+    check("a record a person actually received is still a live case",
+          not (RUN._stable_key(dict(seeded, last_sent="2026-08-22T00:00:00"))
+               and not dict(seeded, last_sent="x").get("last_sent")))
+
+    # The live state today: every platform-keyed finding must be able to reach a person.
+    import json as _json
+    live = ROOT / "alerts" / "state.json"
+    if live.exists():
+        st2 = _json.loads(live.read_text())
+        stuck = [f for f in (st2.get("open") or {}).values()
+                 if str(f.get("key", "")).startswith("platform")
+                 and telegram._suppressed(f, st2) == "acked"]
+        check("no platform-wide signal is muted in the live state file",
+              not stuck, f"{len(stuck)} muted: {sorted({str(f.get('signal')) for f in stuck})}")
+
 
 def t_gate_failure():
     """A red behaviour gate must not be able to take the channel dark in silence."""

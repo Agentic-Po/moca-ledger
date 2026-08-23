@@ -180,6 +180,19 @@ def diff_state(state, findings, ctx, fresh_h=24):
         d["owner"] = ctx.thr.get("escalation_owner") or d.get("owner") or "UNASSIGNED"
         stale = (ctx.t1 - f.ts) > fresh_h * 3600
         cur = state["open"].get(fid)
+        # A SEEDED RECORD THAT WAS NEVER SENT IS NOT A CASE — treat it as absent.
+        # The 2026-08-22 go-live pass stamped ack_by on 429 findings so the channel
+        # would not re-page the August incident. For a wallet-keyed finding that is
+        # harmless: the next farm is a different wallet and therefore a different id.
+        # For the handful keyed on a literal string ("platform", "platform:all"), the
+        # id never changes, so those signals had already spent their one and only
+        # alert on a record nobody ever received. Growth alone is not enough to undo
+        # it either: #15 means "the payout worker hit its ceiling", an EVENT, and a
+        # second saturation at the same level is not 1.5x of the first.
+        if (cur is not None and _stable_key(cur) and not cur.get("last_sent")
+                and cur.get("ack_by") == SEED_ACK and not cur.get("status")):
+            state["open"].pop(fid, None)
+            cur = None
         d["first_ts"] = _onset(d, cur)
         _apply_money(d, d, idx, ctx)
         if cur is None:
@@ -237,6 +250,7 @@ def diff_state(state, findings, ctx, fresh_h=24):
 
 
 RE_ARM_FACTOR = 1.5     # "materially worse", the same bar the reported/watching branch uses
+SEED_ACK = "go-live-seed"   # the 2026-08-22 bootstrap pass, not a human decision
 
 
 def _stable_key(d):

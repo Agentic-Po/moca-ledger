@@ -49,9 +49,17 @@ def run(ctx):
                                      ts=sl * SLOT, detail=f"{cur}/h > {thr} for {consec} slots"))
 
     # ---- EV platform equip velocity (trailing-28-d p95 of daily counts, pause skipped)
-    daily = collections.Counter()
+    # The BASELINE excludes creators already classed TP/suspect, the same filter
+    # slow_harvest applies. EV filtered only is_internal, so a labelled farm's own days
+    # taught EV what normal looks like. The measured counter has to stay unfiltered —
+    # it is what is happening now, not what is ordinary — so the two are built apart.
+    daily = collections.Counter()          # BASELINE: what ordinary days look like
+    daily_all = collections.Counter()      # MEASURED: everything that is not internal
     for ts, t, v, bd, tx in ctx.equips:
-        if not ctx.is_internal(t):
+        if ctx.is_internal(t):
+            continue
+        daily_all[day_str(ts)] += 1
+        if ctx.lite_class(t) not in ("TP", "suspect"):
             daily[day_str(ts)] += 1
     eqs = [e for e in ctx.equips if not ctx.is_internal(e[1])]
     w24 = collections.deque()
