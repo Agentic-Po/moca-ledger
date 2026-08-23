@@ -9,7 +9,7 @@ sender is stubbed and every state file is a temporary one.
 
 Usage:  python3 tests/test_notify.py        (exit 1 on any failure)
 """
-import json, os, pathlib, re, sys, tempfile, time, urllib.error, io, datetime as dt
+import contextlib, json, os, pathlib, re, sys, tempfile, time, urllib.error, io, datetime as dt
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -340,7 +340,12 @@ def t_reply_delivery():
         commands.api = lambda method, **p: {"ok": False, "error": "http 400 can't parse entities"}
         commands.CHAT = lambda: "-100"
         commands.UNDELIVERED.clear()
-        check("reply() reports failure", commands.reply("hello", 1) is False)
+        # The failure is the point of the test, so its stderr line is swallowed here.
+        # Left through, it prints "the person who asked got nothing" into the log of a
+        # GREEN run, which is exactly the sentence an operator must be able to trust.
+        with contextlib.redirect_stderr(io.StringIO()):
+            failed = commands.reply("hello", 1)
+        check("reply() reports failure", failed is False)
         check("a failed reply is recorded for main() to act on", len(commands.UNDELIVERED) == 1)
         commands.UNDELIVERED.clear()
 
