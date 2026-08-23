@@ -330,8 +330,14 @@ def status_text(s):
         try:
             gap = (dt.datetime.now(dt.UTC)
                    - dt.datetime.fromisoformat(run.replace("Z", "+00:00"))).total_seconds() / 60
-            L += ["", f"<i>I last looked at the chain {gap:.0f} min ago. I check about every 10 "
-                      f"minutes, sometimes up to an hour. Silence is not an all-clear.</i>"]
+            # MEASURED, not intended. The schedule asks for every 10 minutes; GitHub
+            # delivers a median of 32 and has taken 102. The figure this used to quote
+            # — "p50 13 / p95 56" — came from alerts/weekly.json with samples: 7, where
+            # "p95" is gaps[int(7*0.95)], i.e. the largest of seven. Promising ten
+            # minutes to somebody deciding whether to wait or escalate is rule 8.
+            L += ["", f"<i>I last looked at the chain {gap:.0f} min ago. In practice I manage "
+                      f"about every half hour, and gaps of an hour and a half have happened. "
+                      f"Silence is not an all-clear.</i>"]
         except Exception:
             L += ["", f"<i>Last checked {run}.</i>"]
     # What I might be MISSING. Without this, /status reads as an all-clear while the
@@ -543,7 +549,7 @@ def handle(s, m):
         seen = ""
         if when:
             gap = (dt.datetime.now(dt.UTC) - dt.datetime.fromtimestamp(int(when), dt.UTC)).total_seconds() / 60
-            if gap > 3: seen = f"\n<i>You sent this {gap:.0f} min ago; I read replies about every 10 minutes.</i>"
+            if gap > 3: seen = f"\n<i>You sent this {gap:.0f} min ago; I read replies when I run, which is about every half hour.</i>"
         reply(f"{icon} recorded as <b>{st}</b> ({meaning}) for <code>{rf.get('id')}</code>"
               + (f" \u00b7 <code>{str(rf.get('key'))[:12]}\u2026</code>" if str(rf.get("key", "")).startswith("0x") else "")
               + f"\n{extra}{seen}", mid)

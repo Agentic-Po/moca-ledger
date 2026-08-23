@@ -599,6 +599,23 @@ def t_platform_signals_can_speak_twice():
               not stuck, f"{len(stuck)} muted: {sorted({str(f.get('signal')) for f in stuck})}")
 
 
+def t_cadence_honesty():
+    """Rule 8: never promise a speed the plumbing cannot deliver."""
+    print("\nwhat the channel promises about its own speed")
+    hb = ROOT / "heartbeat.json"
+    st = commands.status_text({"open": {}}) if hb.exists() else ""
+    check("the channel does not promise a ten-minute cadence",
+          "every 10 minutes" not in st and "about every 10" not in st, st[-140:])
+    src = (ROOT / "notify" / "commands.py").read_text()
+    check("nor anywhere else in the reply surface",
+          "about every 10 minutes" not in src)
+    # A percentile over a handful of points is the maximum wearing a percentile's name.
+    from notify import weekly  # noqa: F401
+    w = (ROOT / "notify" / "weekly.py").read_text()
+    check("the weekly gap report refuses to call a maximum a p95",
+          "MIN_SAMPLES" in w and "int(0.95 * (len(gaps) - 1))" in w)
+
+
 def t_gate_failure():
     """A red behaviour gate must not be able to take the channel dark in silence."""
     print("\nwhen my own checks fail")
@@ -1218,7 +1235,7 @@ def main():
     for fn in (t_incident, t_charts, t_dead_copy, t_holding, t_alarm, t_post,
                t_replies, t_reply_time,
                t_reply_delivery, t_dead_copy, t_local_send_guard,
-               t_platform_signals_can_speak_twice, t_gate_failure, t_shadow, t_cluster,
+               t_platform_signals_can_speak_twice, t_cadence_honesty, t_gate_failure, t_shadow, t_cluster,
                t_owner, t_cut_list, t_selftest,
                t_leaks,
                t_price, t_msglog,
