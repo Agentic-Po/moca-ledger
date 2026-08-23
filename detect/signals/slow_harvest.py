@@ -16,38 +16,61 @@ import math
 from . import register, Finding, SLOT, DAY, H, day_str, ts_of, _pct
 
 
-@register("slow_harvest", order=25)
-def run(ctx):
-    T = ctx.thr
-    fires = []
-    # daily per-creator organic counts for the adaptive baseline
-    daily = collections.defaultdict(collections.Counter)   # day -> creator -> n
+def _organic_days(ctx):
+    """{day -> {creator -> equip-band count}} over the creators we treat as organic."""
+    daily = collections.defaultdict(collections.Counter)
     for ts, t, v, bd, tx in ctx.equips:
         if ctx.is_internal(t) or ctx.lite_class(t) in ("TP", "suspect"):
             continue
         daily[day_str(ts)][t] += 1
-    def thr_for(day_ts):
-        """The bar for a creator >= 7 d old on this day.
+    return daily
 
-        A percentile of every organic creator-day in the window, not the largest one.
-        Under the max-of-maxima this replaced, ONE creator on ONE day set the bar for
-        the next 28 days — and that creator is by construction the most harvest-like
-        one nobody has classed yet, so an uncaught farm raised the bar for catching
-        farms. labels-lite.json is read by exactly one line of detector code (the
-        organic filter above), which made a single wrong class a silent switch for
-        this threshold: measured on the committed ledger, dropping every class moved
-        the >=7 d bar from 11 to 3,828 (348x) with the floor lifted, and one wallet's
-        13 payouts on 2026-07-17 held the live bar at 20 instead of 15 for the 28 days
-        up to 14 Aug. The percentile is 1.0x under both, and fires the same 1,174
-        times on the same 5 entities."""
-        vals = []
-        for j in range(1, T["sa_baseline_days"] + 1):
-            d_ts = day_ts - j * DAY
-            if ctx.in_pause(d_ts):
-                continue
-            vals.extend(daily.get(day_str(d_ts), {}).values())
-        m = _pct(sorted(vals), T["sa_baseline_pct"])
-        return max(T["sa_floor"], math.ceil(T["sa_mult"] * m)) if m else T["sa_floor"]
+
+def aged_floor(ctx, day_ts):
+    """S-A's own bar for a creator >= 7 d old on this day.
+
+    Exported because S-B gates its cluster members on the SAME number. This bar is
+    adaptive, so a cluster rule that hard-coded thresholds.sa_floor would leave every
+    member sitting between the two invisible to BOTH signals — which is precisely the
+    spread-across-N evasion S-B exists for. The percentile currently holds it at the
+    floor; binding the two together is what stops them drifting apart if the organic
+    population ever grows enough for the adaptive term to bind."""
+    return _thr_for(ctx, _organic_days(ctx), day_ts)
+
+
+def _thr_for(ctx, daily, day_ts):
+    """The bar for a creator >= 7 d old on this day.
+
+    A percentile of every organic creator-day in the window, not the largest one.
+    Under the max-of-maxima this replaced, ONE creator on ONE day set the bar for
+    the next 28 days — and that creator is by construction the most harvest-like
+    one nobody has classed yet, so an uncaught farm raised the bar for catching
+    farms. labels-lite.json is read by exactly one line of detector code (the
+    organic filter above), which made a single wrong class a silent switch for
+    this threshold: measured on the committed ledger, dropping every class moved
+    the >=7 d bar from 11 to 3,828 (348x) with the floor lifted, and one wallet's
+    13 payouts on 2026-07-17 held the live bar at 20 instead of 15 for the 28 days
+    up to 14 Aug. The percentile is 1.0x under both, and fires the same 1,174
+    times on the same 5 entities."""
+    T = ctx.thr
+    vals = []
+    for j in range(1, T["sa_baseline_days"] + 1):
+        d_ts = day_ts - j * DAY
+        if ctx.in_pause(d_ts):
+            continue
+        vals.extend(daily.get(day_str(d_ts), {}).values())
+    m = _pct(sorted(vals), T["sa_baseline_pct"])
+    return max(T["sa_floor"], math.ceil(T["sa_mult"] * m)) if m else T["sa_floor"]
+
+
+@register("slow_harvest", order=25)
+def run(ctx):
+    T = ctx.thr
+    fires = []
+    daily = _organic_days(ctx)
+
+    def thr_for(day_ts):
+        return _thr_for(ctx, daily, day_ts)
 
     # rolling 24 h per creator, evaluated per slot
     w24 = collections.deque()

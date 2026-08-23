@@ -377,7 +377,7 @@ class Ctx:
 def evaluate(ctx):
     """Run every registered signal in order; composite (order 90) sees earlier fires."""
     # import all signal modules so they register (idempotent)
-    from . import concentration, burst, invoke, worker, fanin, slow_harvest, watchlist, quest, velocity, pause, exit_score, outflow, composite  # noqa: F401
+    from . import concentration, burst, invoke, worker, fanin, slow_harvest, cluster, watchlist, quest, velocity, pause, exit_score, outflow, composite  # noqa: F401
     for order, name, fn in sorted(REGISTRY, key=lambda x: x[0]):
         fires = fn(ctx) or []
         for f in fires:

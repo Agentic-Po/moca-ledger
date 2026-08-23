@@ -657,9 +657,64 @@ def t_shadow():
           ok.get("thresholds_override_error") is None)
 
 
+# ---------------------------------------------------------------- the cluster alert
+
+def t_cluster():
+    """S-B is the only signal that names a group instead of a wallet.
+
+    Its message has to say what the group is, name the address a person can act on,
+    and name no creator wallet at all: the finding never established that the
+    creators share an owner."""
+    print("\nthe cluster alert")
+    from notify import explain
+    check("S-B has a hand-written explanation, not the terse fallback",
+          explain.SIGNALS.get("S-B") not in (None, explain.FALLBACK))
+    # Built, never written out: the PII gate rejects any real wallet address in a
+    # tracked file, and a real collecting wallet in a test fixture is exactly the
+    # operational intelligence it exists to keep out of the public repo.
+    sink_a, sink_b = "0x" + "d1" * 20, "0x" + "e2" * 20
+    sinks = f"{sink_a},{sink_b}"
+    f = _finding(1, tier="notify", signal="S-B", key="0ece3bd5df", window="6h",
+                 value=0.613, threshold=None,
+                 detail=f"cluster6h 2285/3728 m=2 top=1546 s=2 sinks={sinks}",
+                 headline=["2 creator wallets paying into the same collecting wallet took "
+                           "2,285 of 3,728 equip-sized payouts between them / 6 h"])
+    m = explain.measured(f)
+    check("the S-B measurement is a sentence, not the raw detail",
+          "cluster6h" not in m and "m=2" not in m, m[:90])
+    check("the S-B measurement says how many creators are in the group",
+          "2 creator wallets" in m, m[:60])
+    check("the S-B measurement says what share the group took", "61%" in m, m[:160])
+    # The spec's copy told the reader, in all ten of its measured fires, that no member
+    # was large enough to alert on its own — while both members were simultaneously
+    # firing 10/page, 11/page and S-A/notify in the same slot. That is a mini all-clear
+    # about the named wallets, on the busiest page-storm slot of the incident (rule 3).
+    check("the S-B measurement does not claim the members are individually quiet",
+          "on its own" not in m or "took" in m.split("on its own")[0][-40:], m[:160])
+    # And it must not bracket the single-creator line for whoever forwards a screenshot.
+    check("the S-B measurement does not bracket the single-creator line",
+          "% on its own" not in m, m[:160])
+    check("the S-B measurement names the collecting wallet", sink_a in m, m[-90:])
+    body = explain.humanise(f)
+    check("the S-B alert carries the inferred-from-size hedge", explain.HEDGE in body)
+    named = set(re.findall(r"0x[0-9a-fA-F]{40}", body))
+    check("the S-B alert names only collecting wallets, never a creator wallet",
+          named == {sink_a, sink_b}, str(len(named)))
+    check("the S-B alert hands over no threshold",
+          "threshold" not in body.lower() and "0.45" not in body)
+    g = _finding(2, tier="notify", signal="S-B", key="0ece3bd5df", window="24h", value=41,
+                 detail=f"cluster24h 41 m=4 top=12 s=1 sinks={sink_a}",
+                 headline=["4 creator wallets paying into the same collecting wallet took "
+                           "41 equip-sized payouts between them / 24 h"])
+    m2 = explain.measured(g)
+    check("the spread-out variant says no member was large on its own",
+          "no single one of them took more than 12" in m2, m2[:140])
+
+
 def main():
     for fn in (t_incident, t_holding, t_alarm, t_post, t_replies, t_reply_time,
-               t_reply_delivery, t_dead_copy, t_gate_failure, t_shadow, t_leaks,
+               t_reply_delivery, t_dead_copy, t_gate_failure, t_shadow, t_cluster,
+               t_leaks,
                t_price, t_msglog,
                t_merge, t_prune):
         fn()

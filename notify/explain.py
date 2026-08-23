@@ -91,6 +91,13 @@ SIGNALS = {
         "do": "Compare this creator's equips against actual Skill usage. A popular new Skill can look like this — check before acting.",
         "normal": "A creator of this age normally takes a couple of equip rewards a day.",
     },
+    "S-B": {
+        "title": "Several creators are feeding one wallet and together taking most of the rewards",
+        "what": "Several different creator wallets are passing their MOCA on to the same collecting wallet, and between them they took most of the equip rewards in this window — more than any one of them reached on its own. Some of these wallets may already have alerts of their own; what is new here is that they are connected.",
+        "why": "This is what spreading out looks like. Every other check on this floor scores creators one at a time, so farming split across several accounts can sit below the single-creator line on each of them; the wallet they all pay into is what puts them back together. Nothing here says the accounts belong to one person: the only thing measured is that MOCA from all of them lands on the same address within two steps.",
+        "do": "Start with the collecting wallet. If it is not a real builder's wallet, that is the address to hand an exchange, and each creator paying into it is worth reviewing. If they turn out to be unrelated people who used the same exchange or bridge, say so and that address goes on the allow list.",
+        "normal": "Different creators normally cash out to different places; several of them funnelling into one address in the same week is not a shape ordinary use produces.",
+    },
     "S-G": {
         "title": "A wallet we are already watching just moved",
         "what": "A wallet connected to the August incident has moved MOCA again.",
@@ -435,13 +442,50 @@ def _m_composite(f):                              # composite
             f"hours \u2014 the alerts are listed on the individual messages for those wallets.")
 
 
+def _sinks_words(csv_addrs, n_sinks):
+    """The collecting addresses, as <code> so a reader can copy one straight into a
+    freeze request from a phone. Capped at two: the sentence is the alert's only
+    actionable line and a wall of addresses is not read."""
+    addrs = [a for a in str(csv_addrs or "").split(",") if a]
+    if not addrs:
+        return ""
+    shown = " and ".join(f"<code>{a}</code>" for a in addrs[:2])
+    rest = n_sinks - min(len(addrs), 2)
+    lead = "The wallet they all pay into is" if n_sinks == 1 else "They pay into"
+    return f"{lead} {shown}" + (f", and {rest} more" if rest > 0 else "") + "."
+
+
+def _m_cluster(f):                                # S-B
+    """The group, its share, and the address a person can act on.
+
+    The member wallets are deliberately absent. The finding establishes that MOCA
+    from several creators lands on one address — not that one person owns them —
+    and a forwarded list of creator wallets reads as an accusation of the people
+    behind them."""
+    d = str(f.get("detail") or "").strip()
+    m = re.match(r"cluster6h (\d+)/(\d+) m=(\d+) top=(\d+) s=(\d+)(?: sinks=(\S+))?$", d)
+    if m:
+        k, n, mem, top, ns = (int(x) for x in m.groups()[:5])
+        return (f"{mem} creator wallets that all pass their MOCA on to the same collecting wallet "
+                f"took {k:,} of {n:,} reward payouts between them in {_window(f)} — {k/n:.0%}. "
+                f"The largest single wallet in the group took {top:,} of them. "
+                + _sinks_words(m.group(6), ns))
+    m = re.match(r"cluster24h (\d+) m=(\d+) top=(\d+) s=(\d+)(?: sinks=(\S+))?$", d)
+    if m:
+        k, mem, top, ns = (int(x) for x in m.groups()[:4])
+        return (f"{mem} creator wallets that all pass their MOCA on to the same collecting wallet "
+                f"took {k:,} reward payouts between them in {_window(f)}, and no single one of them "
+                f"took more than {top:,}. " + _sinks_words(m.group(5), ns))
+    return None
+
+
 MEASURED = {
     "10": _m_conc, "10i": _m_conc, "10n": _m_conc,
     "11": _m_burst, "INV-10": _m_inv_conc, "INV-11": _m_inv_burst,
     "15": _m_worker, "4a": _m_m2m, "4b": _m_fanin, "S-C": _m_fanin,
     "S-A": _m_slow, "S-G": _m_watch, "S-Q": _m_quest, "S-Q2": _m_questpt,
     "S-F": _m_pause, "S-X": _m_balance, "9": _m_newrec, "EV": _m_velocity,
-    "13": _m_exit, "composite": _m_composite,
+    "13": _m_exit, "composite": _m_composite, "S-B": _m_cluster,
 }
 
 

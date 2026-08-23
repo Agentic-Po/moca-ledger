@@ -166,6 +166,55 @@ def main():
           {"INV-10", "INV-11"} <= shadow_signals(dict(ctx.thr, shadow_signals=["INV-10"]))[0],
           str(sorted(shadow_signals(dict(ctx.thr, shadow_signals=["INV-10"]))[0])))
 
+    # ---- S-B cluster layer: creators that share a 2-hop sink
+    sb = ctx.fires.get("S-B", [])
+    sb_first = min((f.ts for f in sb), default=None)
+    check("S-B names the shared-sink cluster by 2026-08-21 09:20Z",
+          sb_first is not None and sb_first <= ts_of("2026-08-21T09:20"),
+          f"first fire {utc(sb_first) if sb_first else 'never'}")
+    sb_benign = [f for f in sb if any(a <= f.ts < b for a, b in windows)]
+    check("S-B is silent in the benign windows", not sb_benign, f"{len(sb_benign)} fires")
+    check("the S-B detector never emits above notify (run.py may still escalate a contained case)",
+          all(f.tier == "notify" for f in sb),
+          f"{sum(1 for f in sb if f.tier != 'notify')} non-notify fires")
+    sb_members = {m for f in sb for kind, m, _ in f.evidence if kind == "member"}
+    check("no excluded creator is ever inside an S-B cluster",
+          not [m for m in sb_members if ctx.is_internal(m)], f"{len(sb_members)} members")
+    sb_sinks = {x for f in sb for kind, x, _ in f.evidence if kind == "sink"}
+    check("no allow-listed platform address is ever an S-B collecting wallet",
+          not (sb_sinks & ctx.allow), f"{len(sb_sinks)} sinks")
+
+    # The 24 h rule has no example in this ledger - the August operator never
+    # spread out - so its branch is driven here rather than shipped unexercised.
+    from signals.cluster import shared_sinks, cluster_map, cluster_id, fires_share, fires_aggregate
+    edges = [(100, "0xc1", "0xh1"), (200, "0xh1", "0xsink"),
+             (300, "0xc2", "0xh2"), (400, "0xh2", "0xsink"),
+             (500, "0xc3", "0xh3"), (600, "0xh3", "0xown")]
+    ss = shared_sinks(edges, ["0xc1", "0xc2", "0xc3"])
+    check("two creators two hops from one address are one cluster",
+          set(ss.get("0xsink", ())) == {"0xc1", "0xc2"}, str(sorted(ss)))
+    root_of, sinks_of = cluster_map(ss)
+    check("a creator with only its own sink is not clustered",
+          "0xc3" not in root_of, str(sorted(root_of)))
+    check("the cluster carries the shared address as its sink",
+          sinks_of.get(root_of["0xc1"]) == ["0xsink"], str(sinks_of))
+    backwards = [(100, "0xc1", "0xh1"), (50, "0xh1", "0xsink"), (100, "0xc2", "0xh1")]
+    check("a hop that paid out before it was paid does not carry the link onward",
+          "0xsink" not in shared_sinks(backwards, ["0xc1", "0xc2"]))
+    check("the cluster id depends on the sink set, not on its order",
+          cluster_id(["0xb", "0xa"]) == cluster_id(["0xa", "0xb"]))
+    check("the 6 h rule holds when one member is over the line on its own",
+          not fires_share(60, 100, 50, 50, 0.45), "member at 50% is #10's case")
+    check("the 6 h rule fires when only the group is over the line",
+          fires_share(60, 100, 40, 50, 0.45), "group 60%, largest 40%")
+    check("the 6 h rule holds below the n gate", not fires_share(30, 49, 20, 50, 0.45), "n=49")
+    check("the 24 h rule fires on a farm split under the per-creator floor",
+          fires_aggregate(40, 14, 30.0, 15), "40 across the group, largest 14")
+    check("the 24 h rule holds when a member reaches the per-creator floor",
+          not fires_aggregate(40, 15, 30.0, 15), "largest 15 is S-A's case")
+    check("no excluded creator wallet is ever an S-B collecting wallet",
+          not [x for x in sb_sinks if ctx.is_internal(x)], f"{len(sb_sinks)} sinks")
+
     # ---- G5 the demotion must be applied by the PIPELINE, not merely be available as
     # a helper. Every check above is satisfied by the helper alone: deleting the one
     # line in run.py that calls shadow_tier() leaves them all green while INV-10 goes
