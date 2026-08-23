@@ -26,7 +26,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "detect"))
 
-from signals import Ctx, evaluate, shadow_signals, shadow_tier, ts_of, utc  # noqa: E402
+from signals import Ctx, evaluate, shadow_signals, shadow_tier, ts_of, utc, day_str, _pct  # noqa: E402
 from signals.composite import MEMBERS as COMPOSITE_MEMBERS  # noqa: E402
 from signals import slow_harvest  # noqa: E402  (G5 re-runs this one signal on its own)
 
@@ -94,6 +94,27 @@ def main():
     # `med > 0` alone let a ~1e-18 denominator through and produced 8.4e17.
     check("G6 the outflow multiple is a number a person could read",
           xs and xs[-1] < 100000, f"max {xs[-1]:,.1f}" if xs else "none")
+
+    # ---- G7 no signal may learn its bar from the attack. Replay cannot catch this:
+    # replay evaluates the HISTORIC per-slot threshold, and the damage is to the FORWARD
+    # one — the bar in force tomorrow, computed from a window that now contains the
+    # incident. Measured before the cap: EV's page bar was 615 equip payouts a day
+    # against a busiest-organic-day-ever of 124, because a "p95" over 28 points is the
+    # second-largest value and three of those points were 205 / 4,247 / 17,015.
+    import statistics as _st
+    _daily = {}
+    for _ts, _t, _v, _bd, _tx in ctx.equips:
+        if not ctx.is_internal(_t):
+            _daily[day_str(_ts)] = _daily.get(day_str(_ts), 0) + 1
+    _days = sorted(_daily)
+    _win = sorted(_daily[d] for d in _days[-28:])
+    _organic_max = max((_daily[d] for d in _days if d < "2026-08-19"), default=0)
+    _base = min(_pct(_win, 0.95), ctx.thr["ev_baseline_cap_mult"] * _st.median(_win))
+    _p95 = max(ctx.thr["ev_p95_default"], _base)
+    _bar = int(ctx.thr["ev_page_mult"] * _p95)
+    check("G7 EV's FORWARD page bar is not loosened by the incident it is meant to catch",
+          _bar <= 3 * _organic_max,
+          f"bar {_bar} vs {_organic_max} on the busiest organic day ({_bar/max(_organic_max,1):.1f}x)")
 
     # ---- G5 nothing outside the data may set S-A's bar.
     # labels-lite.json is read by exactly one line of detector code — the organic

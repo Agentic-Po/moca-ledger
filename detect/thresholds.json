@@ -43,6 +43,7 @@
  "newrec_min": 13,
  "newrec_consec_slots": 18,
  "ev_p95_default": 72,
+ "ev_baseline_cap_mult": 4,
  "ev_notify_mult": 2.0,
  "ev_page_mult": 3.0,
  "pause_grace_min": 30,

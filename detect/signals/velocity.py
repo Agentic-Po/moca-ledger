@@ -7,6 +7,7 @@ EV  platform equip velocity: non-excluded equip-sized payouts / rolling 24 h
     >= 2 x trailing-28-d p95 NOTIFY, >= 3 x PAGE (chain-only spread-across-N backstop).
 """
 import collections
+import statistics
 from . import register, Finding, SLOT, DAY, day_str, _pct
 
 
@@ -68,7 +69,23 @@ def run(ctx):
                 if ctx.in_pause(d_ts):
                     continue
                 vals.append(daily.get(day_str(d_ts), 0))
-            p95 = max(T["ev_p95_default"], _pct(sorted(vals), 0.95)) if len(vals) >= 14 else T["ev_p95_default"]
+            # A "p95" over 28 points IS the second-largest value — for n=28 the index is
+            # 25 of 0..27 — so three incident days in the window make the baseline an
+            # outlier picker rather than a percentile. Measured 2026-08-23 with 19-21 Aug
+            # inside the window: the sorted series was [2,3,4,...,69,69,205,4247,17015],
+            # p95 landed on 205, and EV's page bar became 615 equip payouts a day against
+            # a busiest-organic-day-ever of 124. The one platform-wide backstop against a
+            # spread operator was 5x looser than the traffic it watches, and replay cannot
+            # show it because replay evaluates the historic per-slot threshold.
+            # Same disease as S-A's max-of-maxima: a signal learning its bar from the
+            # attack. Bounded by a multiple of the window's own median, which contamination
+            # cannot move: the cap rises only when ORGANIC volume genuinely rises.
+            if len(vals) >= 14:
+                srt = sorted(vals)
+                base = min(_pct(srt, 0.95), T["ev_baseline_cap_mult"] * statistics.median(srt))
+                p95 = max(T["ev_p95_default"], base)
+            else:
+                p95 = T["ev_p95_default"]
         while i < len(eqs) and eqs[i][0] < end:
             w24.append(eqs[i][0])
             i += 1
