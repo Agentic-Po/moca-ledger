@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-08-23T14:55:07Z",
+ "generated_at": "2026-08-23T15:27:58Z",
  "note": "hashed projection; entity keys are salted hashes, thresholds and actions are private",
  "hash": "sha256(salt+lower(key))[:16]",
  "findings": [
@@ -2535,7 +2535,7 @@
    "signal": "S-Q2",
    "tier": "page",
    "first_seen": "2026-08-19 09:20",
-   "acked": true
+   "acked": false
   },
   {
    "h": "2115338c69a53a10",
@@ -2577,14 +2577,14 @@
    "signal": "S-Q",
    "tier": "page",
    "first_seen": "2026-08-19 12:20",
-   "acked": true
+   "acked": false
   },
   {
    "h": "05e6249f25029930",
    "signal": "composite",
    "tier": "page",
    "first_seen": "2026-08-19 13:10",
-   "acked": true
+   "acked": false
   },
   {
    "h": "a6c4e6019dc19476",
@@ -2598,7 +2598,7 @@
    "signal": "EV",
    "tier": "page",
    "first_seen": "2026-08-19 15:10",
-   "acked": true
+   "acked": false
   },
   {
    "h": "c7984c5f9c39b14c",
@@ -2720,18 +2720,18 @@
    "acked": true
   },
   {
-   "h": "6b77fa75b2705e76",
-   "signal": "4a",
-   "tier": "notify",
-   "first_seen": "2026-08-20 18:40",
-   "acked": true
-  },
-  {
    "h": "5bd090628f29b0bb",
    "signal": "S-G",
    "tier": "notify",
    "first_seen": "2026-08-20 18:40",
    "acked": true
+  },
+  {
+   "h": "6b77fa75b2705e76",
+   "signal": "4a",
+   "tier": "notify",
+   "first_seen": "2026-08-20 18:40",
+   "acked": false
   },
   {
    "h": "eef44969683e4c9b",
@@ -2745,21 +2745,21 @@
    "signal": "composite",
    "tier": "page",
    "first_seen": "2026-08-20 19:50",
-   "acked": true
+   "acked": false
   },
   {
    "h": "07912233f4930fa5",
    "signal": "9",
    "tier": "digest",
    "first_seen": "2026-08-20 22:10",
-   "acked": true
+   "acked": false
   },
   {
    "h": "ac48a29a93f11f82",
    "signal": "9",
    "tier": "digest",
    "first_seen": "2026-08-20 22:20",
-   "acked": true
+   "acked": false
   },
   {
    "h": "eef44969683e4c9b",
@@ -2787,7 +2787,7 @@
    "signal": "composite",
    "tier": "page",
    "first_seen": "2026-08-21 06:20",
-   "acked": true
+   "acked": false
   },
   {
    "h": "515832db30f0c5d5",
@@ -2815,7 +2815,7 @@
    "signal": "composite",
    "tier": "page",
    "first_seen": "2026-08-21 07:30",
-   "acked": true
+   "acked": false
   },
   {
    "h": "9a2e21c6455b486a",
@@ -2843,7 +2843,7 @@
    "signal": "15",
    "tier": "page",
    "first_seen": "2026-08-21 09:00",
-   "acked": true
+   "acked": false
   },
   {
    "h": "053522b1c8318687",
