@@ -222,9 +222,45 @@ def diff_state(state, findings, ctx, fresh_h=24):
             elif esc and not stale:
                 cur["pending_send"] = True
                 cur["escalated"] = True
+            elif not stale and _stable_key(cur) and _grew(
+                    cur, _last_alerted_value(cur) if _last_alerted_value(cur) is not None
+                    else prev_value, factor=RE_ARM_FACTOR):
+                # The only route back to the channel for a platform-wide signal. `esc`
+                # needs a TIER INCREASE, and these are already page, so without this a
+                # signal keyed on a literal string speaks once and is silent forever.
+                cur["pending_send"] = True
+                cur["escalation"] = "the platform-wide level has risen again"
+                escalated.append(f)
                 escalated.append(f)
             state["open"][fid] = cur
     return new, escalated
+
+
+RE_ARM_FACTOR = 1.5     # "materially worse", the same bar the reported/watching branch uses
+
+
+def _stable_key(d):
+    """True when this finding's id can never be replaced by a fresh one.
+
+    A finding id is sha256(signal|key). A wallet-keyed finding gets a NEW id for every
+    new wallet, so "one case per finding, alert once" is right for it — the next farm is
+    a different case. A finding keyed on a literal string has ONE id for the life of the
+    system: the platform-wide signals are all keyed "platform" (#15 the payout-worker
+    ceiling, EV the equip-velocity spread backstop, S-Q, S-Q2, #4a), and #9 uses
+    "platform:all" / "platform:airdrop". For those, "alert once per case" means "alert
+    once, ever" — and all five had already spent that once on a seeded record that was
+    never actually sent."""
+    return not str(d.get("key") or "").startswith("0x")
+
+
+def _last_alerted_value(cur):
+    """The value on the message a person last saw, or the previous evaluation."""
+    for row in (cur.get("sends") or []):
+        try:
+            return row[1]
+        except (TypeError, IndexError):
+            continue
+    return None
 
 
 def _grew(cur, baseline, factor=1.5):

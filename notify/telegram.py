@@ -61,6 +61,7 @@ def _post(method, data=None, files=None):
     return {"ok": False, "error": "retries exhausted"}
 
 CAPTION_MAX = 1024      # Telegram's cap on a photo caption
+SEED_ACK = "go-live-seed"   # the 2026-08-22 bootstrap pass, not a human decision
 
 
 def send(text, photo=None, silent=False):
@@ -227,7 +228,17 @@ def _suppressed(f, s):
     rather than clearing them; clearing turned "quiet for 6 hours" into "never sent"
     with no message, which is the one thing §6.6 forbids. Signal-wide /mute is gone
     (council §5); this still honours any mute left in the state file."""
-    if f.get("ack_by") or f.get("ack_role"): return "acked"
+    # A BOOTSTRAP IS NOT A DECISION. On 2026-08-22 a go-live pass stamped ack_by on 429
+    # historical findings so the channel would not re-page the whole August incident on
+    # its first run. Sensible — except five of them are keyed on the literal string
+    # "platform" (#15, EV, S-Q, S-Q2, #4a), and a finding id is sha256(signal|key), so
+    # every FUTURE fire of those signals lands on the same already-acked record. The two
+    # platform-wide pagers — the payout-worker ceiling and the equip-velocity spread
+    # backstop — were muted for the life of the system by a housekeeping pass, and
+    # nothing noticed: not the gate, not the heartbeat, not the daily self-test.
+    # A person's ack is still permanent. A seed's is not.
+    if f.get("ack_role") or (f.get("ack_by") and f.get("ack_by") != SEED_ACK):
+        return "acked"
     sn = f.get("snooze_until")
     if sn and dt.datetime.now(dt.UTC).isoformat() < str(sn): return "snoozed"
     m = (s.get("muted") or {}).get(f.get("signal"))

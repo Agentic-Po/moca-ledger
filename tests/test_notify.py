@@ -537,6 +537,40 @@ def t_local_send_guard():
             os.environ["GITHUB_ACTIONS"] = keep
 
 
+def t_platform_signals_can_speak_twice():
+    """A signal keyed on a literal string must not be one-shot for the life of the system."""
+    print("\nthe platform-wide pagers")
+    sys.path.insert(0, str(ROOT / "detect"))
+    import run as RUN
+
+    seeded = {"id": "4c8de53e7f", "key": "platform", "signal": "15", "tier": "page",
+              "value": 1800.0, "ack_by": "go-live-seed", "ack_ts": "2026-08-22T11:21:16",
+              "pending_send": False, "last_sent": None, "type_verified": False}
+    check("a go-live seed does not permanently mute a signal",
+          telegram._suppressed(dict(seeded), {}) is None,
+          str(telegram._suppressed(dict(seeded), {})))
+    check("a PERSON's ack is still permanent",
+          telegram._suppressed(dict(seeded, ack_by="7788"), {}) == "acked")
+    check("an ack_role is still permanent",
+          telegram._suppressed(dict(seeded, ack_by=None, ack_role="oncall"), {}) == "acked")
+
+    check("a platform-keyed finding is recognised as having a permanent id",
+          RUN._stable_key({"key": "platform"}) and RUN._stable_key({"key": "platform:all"}))
+    check("a wallet-keyed finding is not — a new wallet is a new case",
+          not RUN._stable_key({"key": "0x" + "a" * 40}))
+
+    # The re-arm itself: grew past the value on the message a person last saw.
+    cur = dict(seeded, sends=[[1787000000, 1800.0]], value=2800.0)
+    check("the baseline is the value on the last message that was actually sent",
+          RUN._last_alerted_value(cur) == 1800.0)
+    check("a platform signal that rises materially can alert again",
+          RUN._grew(cur, RUN._last_alerted_value(cur), factor=RUN.RE_ARM_FACTOR))
+    check("a platform signal that barely moves does not",
+          not RUN._grew(dict(cur, value=1850.0), 1800.0, factor=RUN.RE_ARM_FACTOR))
+    check("with no send history it falls back rather than crashing",
+          RUN._last_alerted_value(dict(seeded)) is None)
+
+
 def t_gate_failure():
     """A red behaviour gate must not be able to take the channel dark in silence."""
     print("\nwhen my own checks fail")
@@ -1155,7 +1189,8 @@ def t_digest_example():
 def main():
     for fn in (t_incident, t_charts, t_dead_copy, t_holding, t_alarm, t_post,
                t_replies, t_reply_time,
-               t_reply_delivery, t_dead_copy, t_local_send_guard, t_gate_failure, t_shadow, t_cluster,
+               t_reply_delivery, t_dead_copy, t_local_send_guard,
+               t_platform_signals_can_speak_twice, t_gate_failure, t_shadow, t_cluster,
                t_owner, t_cut_list, t_selftest,
                t_leaks,
                t_price, t_msglog,
