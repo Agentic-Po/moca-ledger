@@ -1,6 +1,6 @@
 {
- "stamped_at": "2026-08-22T13:39:45Z",
- "run_gap_min_p50": 13,
- "run_gap_min_p95": 56,
- "samples": 7
+ "stamped_at": "2026-08-24T07:16:21Z",
+ "run_gap_min_p50": 31,
+ "run_gap_min_p95": 59,
+ "samples": 43
 }
