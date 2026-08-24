@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-08-24T18:48:54Z",
+ "generated_at": "2026-08-24T19:20:20Z",
  "note": "hashed projection; entity keys are salted hashes, thresholds and actions are private",
  "hash": "sha256(salt+lower(key))[:16]",
  "findings": [
@@ -3053,6 +3053,27 @@
    "signal": "S-F",
    "tier": "notify",
    "first_seen": "2026-08-24 18:40",
+   "acked": false
+  },
+  {
+   "h": "4845e7d76253db8c",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-08-24 18:50",
+   "acked": false
+  },
+  {
+   "h": "052f6174cacbc4f4",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-08-24 19:00",
+   "acked": false
+  },
+  {
+   "h": "6b77fa75b2705e76",
+   "signal": "S-F",
+   "tier": "page",
+   "first_seen": "2026-08-24 19:00",
    "acked": false
   },
   {
