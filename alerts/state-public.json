@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-08-25T10:17:15Z",
+ "generated_at": "2026-08-25T10:56:02Z",
  "note": "hashed projection; entity keys are salted hashes, thresholds and actions are private",
  "hash": "sha256(salt+lower(key))[:16]",
  "findings": [
