@@ -19,6 +19,7 @@ organic baselines computed from the same ledger.
 | `data/YYYY-MM-DD.jsonl` | One row per transfer: `block, ts, tx, li, from, to, value` (raw wei) |
 | `detect/` | Detector code, aggregate organic baselines, salted-hash address sets |
 | `labels/` | Public infrastructure addresses (treasury, reward source, cognition sink, AMMs) and campaign windows |
+| `catalog.py` | Measured catalog of every dataset here → `catalog.json` + `DATASETS.md` |
 | `tests/test_pii.py` | Gate that fails the build if anything privacy-sensitive enters the tree |
 | `tests/test_state.py` | Gate on the detector's memory: size cap, restore fallback, no enrichment re-dispatch |
 | `notify/selftest.py` | Daily end-to-end proof that an alert can still reach the channel |
@@ -82,6 +83,18 @@ what it *was* ("that was the quiet daily digest") rather than guessing, and noth
 recorded against a case. Two permanent limits: Telegram will not enumerate messages
 sent before the ledger existed, and it cannot be asked what an arbitrary id was — for
 those, reply to the message and send `/link <case id>`.
+
+## Data catalog
+
+`catalog.py` measures every dataset in this repo — rows, bytes and coverage are computed
+off the files on every crawl, never hand-typed — and writes `catalog.json` (machine) and
+[`DATASETS.md`](DATASETS.md) (human). Each entry also states its provenance and, more
+usefully, what is **not** in it, so a consumer learns the gap from the catalog rather than
+from a wrong number. Private datasets are listed by name only: no schema, no size, no
+coverage, because a findings file's size is a count of open findings. `python3 catalog.py
+--check` recomputes and fails if the committed catalog disagrees with the data.
+Agentic-Po/skill-payout-dashboard fetches this `catalog.json` to show both ledgers in one
+table; that fetch is best-effort on its side, so neither repo's CI can break the other's.
 
 ## Status
 

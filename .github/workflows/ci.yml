@@ -9,6 +9,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        # Full history: catalog.py dates labels/ by each file's last COMMIT,
+        # which a shallow clone cannot see (it then carries the committed
+        # values, making the catalog gate below vacuous for that dataset).
+        with: { fetch-depth: 0 }
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -q -r requirements.txt
@@ -20,6 +24,12 @@ jobs:
       # A push must be able to fail here, before it reaches the group.
       - name: Alerting behaviour gate (incident mode, replies, leaks)
         run: python3 tests/test_notify.py
+      # crawl.yml only ever runs the unconditional build, under
+      # continue-on-error — so a catalog.py that starts raising goes amber and
+      # the stale catalog.json is committed unchanged every ten minutes,
+      # forever. This is the blocking gate behind "the catalog cannot drift".
+      - name: Catalog gate (committed catalog vs recompute)
+        run: python3 catalog.py --check
       - name: Detector gate (replay deadlines + benign windows + parity)
         env: { MINDSET_SALT: "${{ secrets.MINDSET_SALT }}" }
         run: python3 tests/test_gate.py
