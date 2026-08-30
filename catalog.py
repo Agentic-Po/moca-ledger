@@ -150,7 +150,9 @@ PUBLIC = [
          update_cadence="hand-maintained; changes ride with a PR", expected_cadence_minutes=None,
          provenance="public infrastructure identified off-chain (treasury, reward source, cognition sink, AMM pools) plus campaign windows",
          not_included="no account-level mapping of any kind; the excluded-address list is a salted hash set and exit_watch.json is private (see below)"),
-    dict(name="heartbeat", path=["heartbeat.json"], kind="derived", live=True, measure=_heartbeat_stamps,
+    # snapshot=True: the file is REPLACED every crawl, so coverage.from moves
+    # forward legitimately — check() only refuses a backwards move.
+    dict(name="heartbeat", path=["heartbeat.json"], kind="derived", live=True, snapshot=True, measure=_heartbeat_stamps,
          row_schema="run_ts, crawl_ok, detect_ok, notify_ok, rows_total, ledger_last, lag_blocks, mindset_age_h, open_findings, fires_last_24h_total",
          update_cadence="rewritten every crawl (10-minute cron)", expected_cadence_minutes=10,
          provenance="written by the crawl-detect-notify workflow at the end of each run",
@@ -287,7 +289,7 @@ def check():
                 elif nv < ov:
                     bad.append(f"{n['name']}.{k}: {ov} -> {nv} (went backwards)")
             elif live and k == "coverage":
-                if (ov or {}).get("from") != (nv or {}).get("from"):
+                if not n.get("snapshot") and (ov or {}).get("from") != (nv or {}).get("from"):
                     bad.append(f"{n['name']}.coverage.from: {ov} -> {nv}")
                 if (nv or {}).get("to") is None or (nv or {}).get("to") < (ov or {}).get("to", ""):
                     bad.append(f"{n['name']}.coverage.to went backwards: {ov} -> {nv}")
