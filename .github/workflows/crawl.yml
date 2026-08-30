@@ -168,19 +168,13 @@ jobs:
           PRIVATE_REPO_PAT: ${{ secrets.PRIVATE_REPO_PAT }}
         run: python3 notify/request_enrichment.py
 
-      # Plain external dead-man, same one-line contract as
-      # skill-payout-dashboard's refresh.yml (see its RUNBOOK-deadman.md):
-      # healthchecks.io period 10 min, grace 40 min, and the SILENCE is the
-      # alert. Distinct from HC_PING_URL above, which is the richer
-      # start/success/fail check — one runbook now covers both repos.
-      # No-op until the HEALTHCHECK_URL secret is configured.
-      - name: Dead-man ping
-        continue-on-error: true
-        env:
-          HC_URL: ${{ secrets.HEALTHCHECK_URL }}
-        run: |
-          if [ -n "$HC_URL" ]; then curl -fsS -m 10 --retry 3 "$HC_URL" >/dev/null && echo "ping ok"; else echo "HEALTHCHECK_URL not set — skipping"; fi
-
+      # This workflow has exactly ONE healthchecks.io ping path: the
+      # HC_PING_URL start/success/fail triple (start above, success/failure
+      # below), which drives the "moca-ledger detection floor" check. A
+      # second, never-configured secrets.HEALTHCHECK_URL dead-man step was
+      # removed 2026-08-30 — two half-wired ping paths in one workflow is how
+      # silent no-op secrets survive. The skill-payout-dashboard repo has its
+      # own separate check; see its RUNBOOK-deadman.md for the mapping.
       - name: Heartbeat ping (success)
         if: success()
         env: { HC_PING_URL: "${{ secrets.HC_PING_URL }}" }
