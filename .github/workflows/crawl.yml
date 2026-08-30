@@ -62,6 +62,18 @@ jobs:
           fi
           python3 detect/run.py --quiet
 
+      # ABOVE the PII gate on purpose (moved 2026-08-30): catalog.json and
+      # DATASETS.md are written by this step and committed by `git add -A`
+      # below, so with the rebuild after the gate the gate only ever scanned
+      # the OLD checked-out copies and the new ones were published unscanned —
+      # the exact hazard tests/test_pii.py's files() docstring names. It still
+      # rides with the data it measures (it is before "Commit state"), it just
+      # now passes the gate that is supposed to see it. Never blocking: a
+      # catalog is documentation.
+      - name: Rebuild data catalog
+        continue-on-error: true
+        run: python3 catalog.py
+
       # STOPS the job on purpose. A leak is the one failure that cannot be undone —
       # members forward and deleteMessage recalls nothing — so not sending is right.
       - name: PII gate
@@ -155,6 +167,19 @@ jobs:
         env:
           PRIVATE_REPO_PAT: ${{ secrets.PRIVATE_REPO_PAT }}
         run: python3 notify/request_enrichment.py
+
+      # Plain external dead-man, same one-line contract as
+      # skill-payout-dashboard's refresh.yml (see its RUNBOOK-deadman.md):
+      # healthchecks.io period 10 min, grace 40 min, and the SILENCE is the
+      # alert. Distinct from HC_PING_URL above, which is the richer
+      # start/success/fail check — one runbook now covers both repos.
+      # No-op until the HEALTHCHECK_URL secret is configured.
+      - name: Dead-man ping
+        continue-on-error: true
+        env:
+          HC_URL: ${{ secrets.HEALTHCHECK_URL }}
+        run: |
+          if [ -n "$HC_URL" ]; then curl -fsS -m 10 --retry 3 "$HC_URL" >/dev/null && echo "ping ok"; else echo "HEALTHCHECK_URL not set — skipping"; fi
 
       - name: Heartbeat ping (success)
         if: success()
