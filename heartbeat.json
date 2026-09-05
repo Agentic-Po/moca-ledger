@@ -1,13 +1,13 @@
 {
- "run_ts": "2026-09-04T22:16:10+00:00",
+ "run_ts": "2026-09-05T00:12:13+00:00",
  "note": "populated by the crawl workflow",
  "crawl_ok": null,
  "detect_ok": true,
  "notify_ok": null,
- "rows_total": 203052,
- "ledger_last": "2026-09-04 22:14",
- "lag_blocks": 56,
- "mindset_age_h": 291.2,
+ "rows_total": 204267,
+ "ledger_last": "2026-09-05 00:07",
+ "lag_blocks": 128,
+ "mindset_age_h": 293.1,
  "mindset_source": "hashed-stale",
  "open_findings": {
   "page": 9,
