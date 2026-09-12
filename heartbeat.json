@@ -1,21 +1,21 @@
 {
- "run_ts": "2026-09-12T14:02:39+00:00",
+ "run_ts": "2026-09-12T17:07:18+00:00",
  "note": "populated by the crawl workflow",
  "crawl_ok": null,
  "detect_ok": true,
  "notify_ok": null,
- "rows_total": 225463,
- "ledger_last": "2026-09-12 14:00",
- "lag_blocks": 62,
- "mindset_age_h": 475.0,
+ "rows_total": 225815,
+ "ledger_last": "2026-09-12 17:05",
+ "lag_blocks": 52,
+ "mindset_age_h": 478.1,
  "mindset_source": "hashed-stale",
  "open_findings": {
   "page": 9,
   "notify": 70,
   "digest": 4
  },
- "outflow_x_now": 0.2,
- "fires_last_24h_total": 172,
+ "outflow_x_now": 6.4,
+ "fires_last_24h_total": 149,
  "shadow_signals": [
   "INV-10",
   "INV-11"
