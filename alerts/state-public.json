@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-09-13T12:20:06Z",
+ "generated_at": "2026-09-13T16:31:25Z",
  "note": "hashed projection; entity keys are salted hashes, thresholds and actions are private",
  "hash": "sha256(salt+lower(key))[:16]",
  "findings": [
@@ -3508,6 +3508,13 @@
    "signal": "S-F",
    "tier": "notify",
    "first_seen": "2026-09-11 23:50",
+   "acked": false
+  },
+  {
+   "h": "a8eadbd85b19a004",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-13 13:20",
    "acked": false
   },
   {
