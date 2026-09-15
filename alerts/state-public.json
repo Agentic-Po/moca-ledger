@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-09-15T05:59:14Z",
+ "generated_at": "2026-09-15T11:37:03Z",
  "note": "hashed projection; entity keys are salted hashes, thresholds and actions are private",
  "hash": "sha256(salt+lower(key))[:16]",
  "findings": [
@@ -3669,6 +3669,90 @@
    "signal": "S-F",
    "tier": "notify",
    "first_seen": "2026-09-15 05:30",
+   "acked": false
+  },
+  {
+   "h": "1ab00ea4dcfd29c0",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-15 06:50",
+   "acked": false
+  },
+  {
+   "h": "d00ea7aaa9dfd325",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-15 07:20",
+   "acked": false
+  },
+  {
+   "h": "8abb6b5e4eb20953",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-15 07:20",
+   "acked": false
+  },
+  {
+   "h": "65c5d27bf9b33847",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-15 07:40",
+   "acked": false
+  },
+  {
+   "h": "d34cec0f7e998719",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-15 08:50",
+   "acked": false
+  },
+  {
+   "h": "4816b6ddfebd36b5",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-15 08:50",
+   "acked": false
+  },
+  {
+   "h": "74f5bf025cd773ce",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-15 09:30",
+   "acked": false
+  },
+  {
+   "h": "e847ab3b68d2f085",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-15 10:30",
+   "acked": false
+  },
+  {
+   "h": "c824e422d04170f5",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-15 10:30",
+   "acked": false
+  },
+  {
+   "h": "62d4732909b7e47e",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-15 10:40",
+   "acked": false
+  },
+  {
+   "h": "eeb726ce453230c1",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-15 11:00",
+   "acked": false
+  },
+  {
+   "h": "b9372b086ef51771",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-15 11:00",
    "acked": false
   },
   {
