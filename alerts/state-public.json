@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-09-21T01:27:57Z",
+ "generated_at": "2026-09-21T07:00:31Z",
  "note": "hashed projection; entity keys are salted hashes, thresholds and actions are private",
  "hash": "sha256(salt+lower(key))[:16]",
  "findings": [
@@ -4173,6 +4173,48 @@
    "signal": "S-F",
    "tier": "notify",
    "first_seen": "2026-09-20 23:50",
+   "acked": false
+  },
+  {
+   "h": "dacd603dabc7cbc0",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-21 02:50",
+   "acked": false
+  },
+  {
+   "h": "1ce307f18bfc9e07",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-21 03:00",
+   "acked": false
+  },
+  {
+   "h": "bba3b1df92f0e0e7",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-21 03:50",
+   "acked": false
+  },
+  {
+   "h": "e0fd21623164fdf2",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-21 04:40",
+   "acked": false
+  },
+  {
+   "h": "d8178985473d4289",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-21 05:30",
+   "acked": false
+  },
+  {
+   "h": "7f5c0af014bc69a0",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-21 06:50",
    "acked": false
   },
   {
