@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-09-21T19:18:24Z",
+ "generated_at": "2026-09-21T22:39:18Z",
  "note": "hashed projection; entity keys are salted hashes, thresholds and actions are private",
  "hash": "sha256(salt+lower(key))[:16]",
  "findings": [
@@ -74,21 +74,21 @@
    "acked": false
   },
   {
+   "h": "919c9b81d330e371",
+   "signal": "13",
+   "tier": "digest",
+   "first_seen": "2026-07-23 23:00",
+   "acked": false
+  },
+  {
    "h": "6a06834d236694de",
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-23 23:00",
-   "acked": true
+   "acked": false
   },
   {
    "h": "33e4fb3d8dfb7fd7",
-   "signal": "13",
-   "tier": "digest",
-   "first_seen": "2026-07-23 23:00",
-   "acked": true
-  },
-  {
-   "h": "919c9b81d330e371",
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-23 23:00",
@@ -99,98 +99,98 @@
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-23 23:10",
-   "acked": true
+   "acked": false
   },
   {
    "h": "03f52ec917de789a",
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-23 23:10",
-   "acked": true
+   "acked": false
   },
   {
    "h": "a12a0cb616749ac3",
    "signal": "S-C",
    "tier": "notify",
    "first_seen": "2026-07-23 23:20",
-   "acked": true
+   "acked": false
   },
   {
    "h": "5e35b3df8f6071cb",
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-23 23:20",
-   "acked": true
+   "acked": false
   },
   {
    "h": "a45235cee4410a15",
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-23 23:20",
-   "acked": true
+   "acked": false
   },
   {
    "h": "b70d9a07d77437a1",
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-23 23:20",
-   "acked": true
+   "acked": false
   },
   {
    "h": "d905be5137418107",
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-23 23:20",
-   "acked": true
+   "acked": false
   },
   {
    "h": "6aac4e9c2dd26f1f",
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-23 23:30",
-   "acked": true
+   "acked": false
   },
   {
    "h": "5f89015953d8a0fd",
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-23 23:40",
-   "acked": true
+   "acked": false
   },
   {
    "h": "8b253af4cd9b3b59",
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-23 23:40",
-   "acked": true
+   "acked": false
   },
   {
    "h": "f4c25e24f8bb8f33",
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-23 23:50",
-   "acked": true
+   "acked": false
   },
   {
    "h": "ba93a9e9e84b1022",
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-23 23:50",
-   "acked": true
+   "acked": false
   },
   {
    "h": "18da53a1f57a456a",
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-24 00:40",
-   "acked": true
+   "acked": false
   },
   {
    "h": "1eea22c0aca2258f",
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-24 00:40",
-   "acked": true
+   "acked": false
   },
   {
    "h": "b87f08fcd90d32b9",
@@ -253,7 +253,7 @@
    "signal": "13",
    "tier": "digest",
    "first_seen": "2026-07-24 00:50",
-   "acked": true
+   "acked": false
   },
   {
    "h": "9b40e8f105d6dcbd",
@@ -4313,6 +4313,55 @@
    "signal": "S-F",
    "tier": "notify",
    "first_seen": "2026-09-21 18:20",
+   "acked": false
+  },
+  {
+   "h": "38eaa6249768dfdd",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-21 19:40",
+   "acked": false
+  },
+  {
+   "h": "427eef7c4a0860f0",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-21 19:40",
+   "acked": false
+  },
+  {
+   "h": "14b876a87f230ddf",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-21 20:10",
+   "acked": false
+  },
+  {
+   "h": "f07093225e1f255e",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-21 20:40",
+   "acked": false
+  },
+  {
+   "h": "9b83dc1fccab8704",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-21 21:00",
+   "acked": false
+  },
+  {
+   "h": "fda22d244f63aa91",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-21 21:10",
+   "acked": false
+  },
+  {
+   "h": "be03a79ce44b89bc",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-21 22:00",
    "acked": false
   },
   {
