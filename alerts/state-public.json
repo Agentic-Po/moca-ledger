@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-09-23T16:59:07Z",
+ "generated_at": "2026-09-23T20:12:55Z",
  "note": "hashed projection; entity keys are salted hashes, thresholds and actions are private",
  "hash": "sha256(salt+lower(key))[:16]",
  "findings": [
@@ -4647,7 +4647,7 @@
   {
    "h": "97b1a7ad37d85d05",
    "signal": "S-G",
-   "tier": "notify",
+   "tier": "digest",
    "first_seen": "2026-09-23 07:20",
    "acked": false
   },
@@ -4768,6 +4768,83 @@
    "signal": "S-F",
    "tier": "notify",
    "first_seen": "2026-09-23 13:40",
+   "acked": false
+  },
+  {
+   "h": "1677c2859cca38ed",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-23 17:40",
+   "acked": false
+  },
+  {
+   "h": "5f1306a5024a04b5",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-23 18:00",
+   "acked": false
+  },
+  {
+   "h": "1ad8585025fec8ec",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-23 18:20",
+   "acked": false
+  },
+  {
+   "h": "d9d2c7b8c2b3c80c",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-23 18:20",
+   "acked": false
+  },
+  {
+   "h": "9c370cc9dd90fb81",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-23 18:20",
+   "acked": false
+  },
+  {
+   "h": "cbe9f323b662ed95",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-23 18:30",
+   "acked": false
+  },
+  {
+   "h": "4ea61138e0602bc9",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-23 18:40",
+   "acked": false
+  },
+  {
+   "h": "8d11caa80dc63241",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-23 18:40",
+   "acked": false
+  },
+  {
+   "h": "7c40098cca40d540",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-23 18:50",
+   "acked": false
+  },
+  {
+   "h": "34842de2a3c7441c",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-23 19:00",
+   "acked": false
+  },
+  {
+   "h": "122daf38c3f9510f",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-23 20:00",
    "acked": false
   }
  ]
