@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-09-25T12:21:41Z",
+ "generated_at": "2026-09-25T17:28:58Z",
  "note": "hashed projection; entity keys are salted hashes, thresholds and actions are private",
  "hash": "sha256(salt+lower(key))[:16]",
  "findings": [
@@ -4647,7 +4647,7 @@
   {
    "h": "515832db30f0c5d5",
    "signal": "S-G",
-   "tier": "notify",
+   "tier": "digest",
    "first_seen": "2026-09-23 07:20",
    "acked": false
   },
@@ -5790,6 +5790,111 @@
    "signal": "S-F",
    "tier": "notify",
    "first_seen": "2026-09-25 12:10",
+   "acked": false
+  },
+  {
+   "h": "c645c945c213fb94",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-25 13:10",
+   "acked": false
+  },
+  {
+   "h": "84450e1b8c01a877",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-25 13:20",
+   "acked": false
+  },
+  {
+   "h": "9080f505b1f9364f",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-25 13:30",
+   "acked": false
+  },
+  {
+   "h": "835019bb5dc5178d",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-25 13:30",
+   "acked": false
+  },
+  {
+   "h": "ef0b2dad48916e12",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-25 13:40",
+   "acked": false
+  },
+  {
+   "h": "4e8eb12455952da5",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-25 13:40",
+   "acked": false
+  },
+  {
+   "h": "4d3b6809a24aa933",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-25 13:40",
+   "acked": false
+  },
+  {
+   "h": "f9e476c47142c1fa",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-25 14:00",
+   "acked": false
+  },
+  {
+   "h": "2dfc526b8a1091ac",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-25 14:20",
+   "acked": false
+  },
+  {
+   "h": "058e5a80b4bf38e0",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-25 15:00",
+   "acked": false
+  },
+  {
+   "h": "0a71982836418603",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-25 15:10",
+   "acked": false
+  },
+  {
+   "h": "ee39bbbe577e69c9",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-25 15:50",
+   "acked": false
+  },
+  {
+   "h": "c14a7f0d74c39924",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-25 15:50",
+   "acked": false
+  },
+  {
+   "h": "9660e2b799910824",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-25 15:50",
+   "acked": false
+  },
+  {
+   "h": "7a8af991267fe162",
+   "signal": "S-F",
+   "tier": "notify",
+   "first_seen": "2026-09-25 16:20",
    "acked": false
   }
  ]
