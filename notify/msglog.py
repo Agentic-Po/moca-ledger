@@ -34,6 +34,11 @@ Files (private repo — message text carries human words and Telegram user ids):
 import atexit, base64, json, os, pathlib, sys, urllib.request, urllib.error, datetime as dt
 
 ROOT   = pathlib.Path(__file__).resolve().parent.parent
+try:                              # public Actions logs: no message volume or case ids
+    from privlog import private_print
+except ImportError:
+    sys.path.insert(1, str(ROOT))
+    from notify.privlog import private_print
 LOCAL  = ROOT / "alerts" / "msglog"
 INDEX  = LOCAL / "index.json"
 REPO   = "Agentic-Po/moca-ledger-private"
@@ -198,7 +203,7 @@ def record_out(message_id, kind, case_id=None, reply_to=None, **meta):
                         **{k: v for k, v in meta.items() if v is not None}})
         _remember(mid, kind, case_id, reply_to)
     except Exception as e:                                    # never silent
-        print(f"msglog: record_out failed for {message_id} ({type(e).__name__})", file=sys.stderr)
+        private_print(f"msglog: record_out failed for {message_id} ({type(e).__name__})", file=sys.stderr)
 
 
 def record_in(update, resolved_case=None, outcome="seen", action=None):
@@ -212,7 +217,7 @@ def record_in(update, resolved_case=None, outcome="seen", action=None):
                        "reply_to": (m.get("reply_to_message") or {}).get("message_id"),
                        "resolved_case": resolved_case, "outcome": outcome, "action": action})
     except Exception as e:
-        print(f"msglog: record_in failed ({type(e).__name__})", file=sys.stderr)
+        private_print(f"msglog: record_in failed ({type(e).__name__})", file=sys.stderr)
 
 
 # ---------------------------------------------------------------- resolution
@@ -349,16 +354,16 @@ def pull():
     would grow every run forever, and resolution reads the index."""
     global _INDEX
     if not _pat():
-        print("msglog: no token, local only"); return True
+        private_print("msglog: no token, local only", public="msglog: no token, local only"); return True
     ok = True
     try:
         listing = _api(REMOTE_DIR) or []
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            print("msglog: no remote ledger yet"); return True
-        print(f"msglog: pull listing failed (http {e.code})"); return False
+            private_print("msglog: no remote ledger yet", public="msglog: no remote ledger yet"); return True
+        private_print(f"msglog: pull listing failed (http {e.code})", public="msglog: pull listing failed (HTTPError)"); return False
     except Exception as e:
-        print(f"msglog: pull listing failed ({type(e).__name__})"); return False
+        private_print(f"msglog: pull listing failed ({type(e).__name__})", public=f"msglog: pull listing failed ({type(e).__name__})"); return False
 
     names = [f["name"] for f in listing if f.get("type") == "file"]
     want = ["index.json"] if "index.json" in names else []
@@ -370,7 +375,7 @@ def pull():
         try:
             _pull_file(name)
         except Exception as e:
-            print(f"msglog: pull {name} failed ({type(e).__name__})"); ok = False
+            private_print(f"msglog: pull {name} failed ({type(e).__name__})"); ok = False
     _INDEX = None                                   # re-read what we just pulled
 
     # One-time: fold the pre-shard files into the index so the ids they already hold
@@ -389,9 +394,9 @@ def pull():
                     if r.get("message_id"):
                         _remember(r["message_id"], r.get("kind") or "alert",
                                   r.get("case_id"), r.get("reply_to"))
-                print(f"msglog: folded legacy {name} into the index")
+                private_print(f"msglog: folded legacy {name} into the index")
             except Exception as e:
-                print(f"msglog: legacy {name} not folded ({type(e).__name__})"); ok = False
+                private_print(f"msglog: legacy {name} not folded ({type(e).__name__})"); ok = False
         ix["legacy"] = True
         globals()["_DIRTY"] = True
 
@@ -413,11 +418,12 @@ def pull():
                     _remember(r["message_id"], r.get("kind") or "tier2",
                               r.get("case_id"), r.get("reply_to"))
                     n += 1
-            print(f"msglog: folded {n} private-side association(s)")
+            private_print(f"msglog: folded {n} private-side association(s)")
         except Exception as e:
-            print(f"msglog: pending links not folded ({type(e).__name__})"); ok = False
+            private_print(f"msglog: pending links not folded ({type(e).__name__})"); ok = False
     flush()
-    print(f"msglog: pull done ({len(ix['msgs'])} indexed; {', '.join(want) or 'nothing remote'})")
+    private_print(f"msglog: pull done ({len(ix['msgs'])} indexed; {', '.join(want) or 'nothing remote'})",
+                  public="msglog: pull ok" if ok else "msglog: pull incomplete")
     return ok
 
 
@@ -429,7 +435,7 @@ def push():
     last rows on a disposable CI runner. A sealed shard matches its recorded size
     from then on and is skipped for free."""
     if not _pat():
-        print("msglog: no token, local only"); return True
+        private_print("msglog: no token, local only", public="msglog: no token, local only"); return True
     flush()
     ok, sent = True, []
     files = [INDEX] + _shards("out") + _shards("in")
@@ -458,10 +464,11 @@ def push():
                             else _merge_lines(data, remote))
                     p.write_bytes(data)
                     continue
-                print(f"msglog: push {name} failed (http {e.code})"); ok = False; break
+                private_print(f"msglog: push {name} failed (http {e.code})"); ok = False; break
             except Exception as e:
-                print(f"msglog: push {name} failed ({type(e).__name__})"); ok = False; break
-    print(f"msglog: push done ({', '.join(sent) or 'nothing new'}, {len(_index()['msgs'])} indexed)")
+                private_print(f"msglog: push {name} failed ({type(e).__name__})"); ok = False; break
+    private_print(f"msglog: push done ({', '.join(sent) or 'nothing new'}, {len(_index()['msgs'])} indexed)",
+                  public="msglog: push ok" if ok else "msglog: push incomplete")
     return ok
 
 
@@ -482,7 +489,7 @@ if __name__ == "__main__":
     a = sys.argv[1:]
     if a[:1] == ["pull"]:    sys.exit(0 if pull() else 1)
     if a[:1] == ["push"]:    sys.exit(0 if push() else 1)
-    if a[:1] == ["resolve"]: print(resolve(a[1])); sys.exit(0)
-    if a[:1] == ["describe"]: print(describe(a[1])); sys.exit(0)
-    if a[:1] == ["link"]:    print(link(a[1], a[2])); flush(); sys.exit(0)
-    print(json.dumps(stats(), indent=1))
+    if a[:1] == ["resolve"]: print(resolve(a[1])); sys.exit(0)  # log-ok: local CLI
+    if a[:1] == ["describe"]: print(describe(a[1])); sys.exit(0)  # log-ok: local CLI
+    if a[:1] == ["link"]:    print(link(a[1], a[2])); flush(); sys.exit(0)  # log-ok: local CLI
+    print(json.dumps(stats(), indent=1))  # log-ok: local CLI

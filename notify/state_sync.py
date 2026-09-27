@@ -18,16 +18,22 @@ REPO   = "Agentic-Po/moca-ledger-private"
 REMOTE = "state/alerts-state.json"
 API    = f"https://api.github.com/repos/{REPO}/contents/{REMOTE}"
 
+try:                              # public Actions logs: no finding counts, no backlog
+    from privlog import private_print
+except ImportError:
+    sys.path.insert(1, str(ROOT))
+    from notify.privlog import private_print
+
 def _pat():
     p = os.environ.get("PRIVATE_REPO_PAT")
     if p: return p
     f = pathlib.Path.home() / ".moca-ledger" / "private_repo_pat"
     return f.read_text().strip() if f.exists() else None
 
-def _req(method, body=None):
+def _req(method, body=None, api=None):
     pat = _pat()
     if not pat: return None
-    r = urllib.request.Request(API, method=method,
+    r = urllib.request.Request(api or API, method=method,
                                data=json.dumps(body).encode() if body else None,
                                headers={"Authorization": f"Bearer {pat}",
                                         "Accept": "application/vnd.github+json",
@@ -72,7 +78,7 @@ def prune(state):
     bm = state.get("by_message") or {}
     if len(bm) > KEEP_MSGS:
         state["by_message"] = dict(list(bm.items())[-KEEP_MSGS:])
-        print(f"state: trimmed by_message to the last {KEEP_MSGS} entries")
+        private_print(f"state: trimmed by_message to the last {KEEP_MSGS} entries")
 
     open_f = state.get("open") or {}
     newest_first = lambda it: str(it[1].get("first_ts") or it[1].get("ts") or "")
@@ -93,7 +99,7 @@ def prune(state):
         keep = keep[:-cut]
 
     if over:
-        print(f"state: WARNING — still {_size(state)} bytes with only {len(keep)} findings kept; "
+        private_print(f"state: WARNING — still {_size(state)} bytes with only {len(keep)} findings kept; "
               f"the bulk is NOT the finding list. Restore will fall back to download_url.")
     if not dropped:
         state["open"] = open_f                    # unchanged: do not churn key order
@@ -101,13 +107,13 @@ def prune(state):
     state["open"] = dict(keep)
     state["retired"] = (state.get("retired") or 0) + len(dropped)
     live_dropped = sum(1 for _, f in dropped if not _settled(f))
-    print(f"state: retired {len(dropped)} finding(s) to stay under the size cap "
+    private_print(f"state: retired {len(dropped)} finding(s) to stay under the size cap "
           f"(kept {len(keep)}, {_size(state)} bytes)")
     if live_dropped:
         # Loud on purpose: this is a finding nobody acknowledged being forgotten.
-        print(f"state: WARNING — {live_dropped} of them were still UNACKNOWLEDGED; "
+        private_print(f"state: WARNING — {live_dropped} of them were still UNACKNOWLEDGED; "
               f"the state is at its size ceiling and open cases are being aged out")
-    # stdout is a public Actions log nobody is reading at 3am. Council §6.6: never
+    # stdout is a public Actions log (quiet there: notify/privlog.py). Council §6.6: never
     # drop a finding without saying so. notify/telegram.py picks this up and posts
     # it on the next run, then clears it.
     n = state.get("retired_notice") or {"total": 0, "unacked": 0}
@@ -119,7 +125,7 @@ def prune(state):
 def pull():
     """Fetch state from the private repo into alerts/state.json."""
     if not _pat():
-        print("state: no token, using local file"); return True
+        private_print("state: no token, using local file", public="state: no token, using local file"); return True
     try:
         d = _req("GET")
         if d.get("content"):
@@ -127,24 +133,85 @@ def pull():
         else:                                    # >1 MB: the API omits inline content
             url = d.get("download_url")
             if not url:
-                print("state: PULL FAILED (no inline content and no download_url) — refusing to run stateless")
+                private_print("state: PULL FAILED (no inline content and no download_url) — refusing to run stateless",
+                              public="state: PULL FAILED — refusing to run stateless")
                 return False
             raw = urllib.request.urlopen(urllib.request.Request(
                 url, headers={"Authorization": f"Bearer {_pat()}"}), timeout=30).read()
-            print(f"state: inline content omitted (>1 MB) — restored {len(raw)} bytes via download_url")
+            private_print(f"state: inline content omitted (>1 MB) — restored {len(raw)} bytes via download_url")
         json.loads(raw)                          # never write a file we cannot parse
         STATE.parent.mkdir(parents=True, exist_ok=True)
         STATE.write_bytes(raw)
         (STATE.parent / ".state_sha").write_text(d["sha"])
         n = len(json.loads(raw).get("open", {}))
-        print(f"state: pulled {n} findings from the private repo")
+        private_print(f"state: pulled {n} findings from the private repo", public="state: pulled")
         return True
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            print("state: none stored yet — first run"); return True
-        print(f"state: PULL FAILED ({e.code}) — refusing to run stateless"); return False
+            private_print("state: none stored yet — first run", public="state: none stored yet"); return True
+        private_print(f"state: PULL FAILED ({e.code}) — refusing to run stateless",
+                      public="state: PULL FAILED (HTTPError) — refusing to run stateless"); return False
     except Exception as e:
-        print(f"state: PULL FAILED ({type(e).__name__}) — refusing to run stateless"); return False
+        private_print(f"state: PULL FAILED ({type(e).__name__}) — refusing to run stateless",
+                      public=f"state: PULL FAILED ({type(e).__name__}) — refusing to run stateless"); return False
+
+
+# ---------------------------------------------------------------- the detector oracle
+# Salted-hash sets the detector reads, which used to be committed to the PUBLIC repo:
+#   * labels-lite.json  hash -> TP / benign / suspect   (who we have classified)
+#   * watchlist.json    hashes under persistent watch   (who we are watching)
+#   * mindset.json      hash -> Mind creation hour      (21k rows; creation hour vs the
+#                       public ledger's first-receipt time links a hash back to its
+#                       wallet, which then decodes the two files above)
+# They now live in the private repo under oracle/ and are restored here, beside the
+# state, with the same token. Read-only: nothing on this side ever writes them back,
+# so they cost no private-repo pushes (and no private Actions minutes).
+ORACLE = {
+    "oracle/labels-lite.json": ROOT / "labels" / "labels-lite.json",
+    "oracle/watchlist.json":   ROOT / "detect" / "watchlist.json",
+    "oracle/mindset.json":     ROOT / "detect" / "mindset.json",
+}
+
+
+def _fetch_raw(remote):
+    d = _req("GET", api=f"https://api.github.com/repos/{REPO}/contents/{remote}") or {}
+    if d.get("content"):
+        return base64.b64decode(d["content"])
+    url = d.get("download_url")
+    if not url:
+        raise ValueError("no inline content and no download_url")
+    return urllib.request.urlopen(urllib.request.Request(
+        url, headers={"Authorization": f"Bearer {_pat()}"}), timeout=30).read()
+
+
+def pull_oracle():
+    """Restore the private detector oracle into the checkout (gitignored paths).
+
+    Fails LOUDLY and the step stops the job: running without labels-lite.json moves
+    S-A's bar by two orders of magnitude (tests/test_gate.py G5) and without the
+    watchlist S-G is silently off — a detector that is quietly different from the
+    one that was tested is worse than a red run. Without a token (a laptop, a fork
+    PR) whatever is on disk is used, exactly as pull() does for the state."""
+    if not _pat():
+        missing = [str(p.relative_to(ROOT)) for p in ORACLE.values() if not p.exists()]
+        private_print("oracle: no token, using local files" + (f" (missing: {missing})" if missing else ""),
+                      public="oracle: no token, using local files")
+        return True
+    ok = True
+    for remote, local in ORACLE.items():
+        try:
+            raw = _fetch_raw(remote)
+            json.loads(raw)                      # never write a file we cannot parse
+            local.parent.mkdir(parents=True, exist_ok=True)
+            local.write_bytes(raw)
+        except Exception as e:
+            code = getattr(e, "code", None)
+            private_print(f"oracle: PULL FAILED for {remote} ({code or type(e).__name__})",
+                          public=f"oracle: PULL FAILED ({type(e).__name__})")
+            ok = False
+    if ok:
+        private_print("oracle: restored " + ", ".join(ORACLE), public="oracle: restored")
+    return ok
 
 
 def _remote_sha():
@@ -167,7 +234,7 @@ def _remote_state():
                 url, headers={"Authorization": f"Bearer {_pat()}"}), timeout=30).read()
         return json.loads(raw), d.get("sha")
     except Exception as e:
-        print(f"state: could not read the concurrent write ({type(e).__name__})")
+        private_print(f"state: could not read the concurrent write ({type(e).__name__})")
         return None
 
 
@@ -233,7 +300,7 @@ def push():
     older copy, re-sends alerts the human already handled and re-dispatches
     enrichment. Returns False loudly rather than pretending it worked."""
     if not _pat() or not STATE.exists():
-        print("state: nothing to push"); return True
+        private_print("state: nothing to push", public="state: nothing to push"); return True
     st = prune(json.loads(STATE.read_text()))
     STATE.write_text(json.dumps(st, indent=1))
     sha_f = STATE.parent / ".state_sha"
@@ -247,7 +314,8 @@ def push():
             d = _req("PUT", body)
             sha_f.write_text(d["content"]["sha"])
             STATE.write_text(json.dumps(st, indent=1))
-            print(f"state: pushed {len(st.get('open', {}))} findings, {STATE.stat().st_size} bytes")
+            private_print(f"state: pushed {len(st.get('open', {}))} findings, {STATE.stat().st_size} bytes",
+                          public="state: pushed")
             return True
         except urllib.error.HTTPError as e:
             detail = f"http {e.code}"
@@ -257,7 +325,7 @@ def push():
                     before = len(st.get("open", {}))
                     st = prune(merge(cur[0], st))
                     sha = cur[1]
-                    print(f"state: conflict — merged with the concurrent write "
+                    private_print(f"state: conflict — merged with the concurrent write "
                           f"({before} -> {len(st.get('open', {}))} findings)")
                 else:
                     sha = _remote_sha()
@@ -265,11 +333,13 @@ def push():
             detail = type(e).__name__
         if attempt < 2:
             time.sleep(2 * (attempt + 1))
-    print(f"state: PUSH FAILED ({detail}) after 3 attempts — the next run will re-pull an "
-          f"older copy and may re-send handled alerts")
+    private_print(f"state: PUSH FAILED ({detail}) after 3 attempts — the next run will re-pull an "
+                  f"older copy and may re-send handled alerts",
+                  public="state: PUSH FAILED — the next run may re-send handled alerts")
     return False
 
 
 if __name__ == "__main__":
-    ok = pull() if sys.argv[1:] == ["pull"] else push()
+    arg = sys.argv[1:]
+    ok = pull() if arg == ["pull"] else pull_oracle() if arg == ["pull-oracle"] else push()
     sys.exit(0 if ok else 1)

@@ -11,6 +11,11 @@ that WILL happen, and the exit code goes non-zero.
 import json, os, pathlib, sys, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+try:                              # public Actions logs: no finding ids, no counts
+    from privlog import private_print
+except ImportError:
+    sys.path.insert(1, str(ROOT))
+    from notify.privlog import private_print
 STATE = ROOT / "alerts" / "state.json"
 TARGET = "Agentic-Po/moca-ledger-private"
 
@@ -42,9 +47,10 @@ def main():
     s = json.loads(STATE.read_text()) if STATE.exists() else {}
     todo = pending(s)
     if not todo:
-        print("enrichment: nothing to request"); return 0
+        private_print("enrichment: nothing to request", public="enrichment: ok"); return 0
     if not pat:
-        print(f"enrichment: {len(todo)} pending, no PAT — private side will pick them up on its hourly pass")
+        private_print(f"enrichment: {len(todo)} pending, no PAT — private side will pick them up on its hourly pass",
+                      public="enrichment: no PAT — the private side polls hourly")
         return 0
     sent, failed = 0, 0
     for f in todo[:10]:
@@ -53,7 +59,7 @@ def main():
             f["enrich_requested"] = True; sent += 1
         else:
             failed += 1
-            print(f"enrichment: dispatch failed for {f['id']} ({detail})")
+            private_print(f"enrichment: dispatch failed for {f['id']} ({detail})")
     STATE.write_text(json.dumps(s, indent=1))
     rc = 0
     if sent:
@@ -66,14 +72,16 @@ def main():
             from notify.state_sync import push as push_state
             pushed = bool(push_state())
         except Exception as e:
-            print(f"enrichment: could not persist flags ({type(e).__name__})")
+            private_print(f"enrichment: could not persist flags ({type(e).__name__})")
         if not pushed:
-            print(f"enrichment: STATE PUSH FAILED — the enrich_requested flag for {sent} finding(s) "
-                  f"is NOT persisted and the next run WILL re-dispatch them")
+            private_print(f"enrichment: STATE PUSH FAILED — the enrich_requested flag for {sent} finding(s) "
+                          f"is NOT persisted and the next run WILL re-dispatch them",
+                          public="enrichment: STATE PUSH FAILED — flags not persisted")
             rc = 1
     if failed:
         rc = 1
-    print(f"enrichment: requested {sent}, failed {failed}, still pending {max(0, len(todo) - sent)}")
+    private_print(f"enrichment: requested {sent}, failed {failed}, still pending {max(0, len(todo) - sent)}",
+                  public="enrichment: ok" if not rc else "enrichment: failed")
     return rc
 
 

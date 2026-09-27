@@ -25,6 +25,8 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "detect"))
+sys.path.insert(1, ROOT)
+from notify.privlog import private_print  # noqa: E402
 
 from signals import Ctx, evaluate, shadow_signals, shadow_tier, ts_of, utc, day_str, _pct  # noqa: E402
 from signals.composite import MEMBERS as COMPOSITE_MEMBERS  # noqa: E402
@@ -34,7 +36,10 @@ FAILS = []
 
 
 def check(name, ok, note=""):
-    print(f"  {'PASS' if ok else 'FAIL'}  {name}" + (f"  ({note})" if note else ""))
+    # Notes quote fire times and counts computed with the private salt and oracle:
+    # public CI logs get the check name only (notify/privlog.py).
+    private_print(f"  {'PASS' if ok else 'FAIL'}  {name}" + (f"  ({note})" if note else ""),
+                  public=f"  {'PASS' if ok else 'FAIL'}  {name}")
     if not ok:
         FAILS.append(name)
 

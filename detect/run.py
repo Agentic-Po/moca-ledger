@@ -6,10 +6,11 @@ mind set UNION chain, chain-only fallback) -> run every signal on rolling 10-min
 windows -> reduce fires to episodes -> diff against alerts/state.json -> write
 new/escalated findings (pending_send: true; notify/telegram.py sends them) ->
 write incidents/<date>/<hhmm>-<signal>-<key8>/{finding.json,evidence.csv,view.png}
--> update heartbeat.json.
+-> update heartbeat.json (public: run health only) and state['detector_health']
+(private: findings, fires, shadow, mind-set age).
 
-Flags: --dry-run (no writes), --quiet (counts only on stdout — public Actions
-logs are world-readable), --as-of <block> (replay parity), --loop-if-hot.
+Flags: --dry-run (no writes), --quiet (counts only on stdout; inside Actions not
+even counts — see notify/privlog.py), --as-of <block> (replay parity), --loop-if-hot.
 """
 import argparse
 import bisect
@@ -21,6 +22,8 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(1, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from notify.privlog import private_print, in_public_ci
 import signals as S
 from signals import Ctx, evaluate, episodes, summary, ts_of, utc, SLOT, DAY
 
@@ -173,8 +176,8 @@ def diff_state(state, findings, ctx, fresh_h=24):
         d["unit_source"] = ctx.unit_source.get(S.day_str(f.ts), "frozen")
         d["type_verified"] = False
         # Who runs the bot, NOT who can pause a payout. Those were one field until
-        # 2026-08-23, so a page read "Who to ask  Po (interim)" — the alert telling Po
-        # to ask Po. The kill switch is read at send time from thresholds.kill_switch by
+        # 2026-08-23, so a page read "Who to ask  <operator> (interim)" — the alert telling the
+        # operator to ask the operator. The kill switch is read at send time from thresholds.kill_switch by
         # notify/explain.py:pause_lines(); it is a fact about the org on the day the
         # message goes out, not about the finding, and stamping it froze it.
         d["owner"] = ctx.thr.get("escalation_owner") or d.get("owner") or "UNASSIGNED"
@@ -349,25 +352,50 @@ def write_incident(f, ctx):
     return folder, f.view_png
 
 
+# heartbeat.json is committed to a PUBLIC repo every run, so it carries RUN HEALTH
+# ONLY: did the crawl land and how far behind the tip is it. Everything about the
+# DETECTOR — open findings by tier, fire counts, the outflow multiple, which signals
+# are in shadow, how stale the address set is — is a live readout for whoever is being
+# watched, so it goes to state["detector_health"] instead, which lives only in the
+# private repo (notify/state_sync.py). Readers merge the two via notify/health.py.
+PUBLIC_HEARTBEAT_FIELDS = ("run_ts", "crawl_ok", "rows_total", "ledger_last", "lag_blocks")
+
+
 def heartbeat(ctx, state, ok=True):
-    shadow_now = S.shadow_signals(ctx.thr)
-    hb = {}
+    """Write the public run-health heartbeat; return nothing.
+
+    Rewritten from scratch every run (not merged into the old file), so a field
+    dropped from PUBLIC_HEARTBEAT_FIELDS can never linger in the published copy."""
+    prev = {}
     if os.path.exists(HEARTBEAT):
         try:
-            hb = json.load(open(HEARTBEAT))
+            prev = json.load(open(HEARTBEAT))
         except Exception:
-            hb = {}
+            prev = {}
+    now = dt.datetime.now(dt.UTC)
+    hb = {
+        "run_ts": now.isoformat(timespec="seconds"),
+        "note": "run health only; detector status is private",
+        "crawl_ok": prev.get("crawl_ok"),
+        "rows_total": len(ctx.rows),
+        "ledger_last": utc(ctx.t1),
+        "lag_blocks": int((now.timestamp() - ctx.t1) / 2),
+    }
+    with open(HEARTBEAT, "w") as fh:
+        json.dump(hb, fh, indent=1)
+
+
+def detector_health(ctx, state, ok=True):
+    """The detector's own health, for the PRIVATE state file only (see above)."""
+    shadow_now = S.shadow_signals(ctx.thr)
     now = dt.datetime.now(dt.UTC)
     open_f = [v for v in state["open"].values() if not (v.get("ack_role") or v.get("ack_by"))]
     per_day = {}
     for sid, fires in ctx.fires.items():
         per_day[sid] = sum(1 for f in fires if f.ts >= ctx.t1 - DAY)
-    hb.update({
-        "run_ts": now.isoformat(timespec="seconds"),
+    return {
+        "health_ts": now.isoformat(timespec="seconds"),
         "detect_ok": ok,
-        "rows_total": len(ctx.rows),
-        "ledger_last": utc(ctx.t1),
-        "lag_blocks": int((now.timestamp() - ctx.t1) / 2),
         "mindset_age_h": ctx.mindset_age_h,
         "mindset_source": ctx.mindset_source,
         "open_findings": {
@@ -375,37 +403,15 @@ def heartbeat(ctx, state, ok=True):
             "notify": sum(1 for v in open_f if v.get("tier") == "notify"),
             "digest": sum(1 for v in open_f if v.get("tier") == "digest"),
         },
-        "fires_last_24h_total": sum(per_day.values()) if isinstance(per_day, dict) else per_day,
-        # Which shapes are muted, in the file the un-pause runbook reads. A shadow
-        # nobody can see from outside is indistinguishable from a signal that died.
+        "fires_last_24h_total": sum(per_day.values()),
+        # Which shapes are muted, where the un-pause runbook reads it. A shadow nobody
+        # can see is indistinguishable from a signal that died — but "nobody" means
+        # the team, so it is recorded privately, never in the public heartbeat.
         "shadow_signals": sorted(shadow_now[0]),
         "shadow_refused": shadow_now[1],
         "thresholds_override_error": ctx.thr.get("thresholds_override_error"),
         "outflow_x_now": getattr(ctx, "outflow_x", {}).get(ctx.s1),
-    })
-    with open(HEARTBEAT, "w") as fh:
-        json.dump(hb, fh, indent=1)
-
-
-def write_public_state(state, ctx):
-    """Publishable projection of the findings: hashed key, tier, first seen.
-
-    The plaintext state names which wallets we flagged, at what value against which
-    threshold, plus the recommended action — a calibration oracle for the operator
-    it is watching. It is gitignored; this hashed projection is what ships."""
-    import hashlib
-    salt = os.environ.get("MINDSET_SALT", "")
-    h = lambda x: hashlib.sha256((salt + str(x).lower()).encode()).hexdigest()[:16]
-    pub = {"generated_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-           "note": "hashed projection; entity keys are salted hashes, thresholds and actions are private",
-           "hash": "sha256(salt+lower(key))[:16]",
-           "findings": sorted(
-               ({"h": h(v.get("key")), "signal": v.get("signal"), "tier": v.get("tier"),
-                 "first_seen": v.get("first_ts"), "acked": bool(v.get("ack_role") or v.get("ack_by"))}
-                for v in state.get("open", {}).values()),
-               key=lambda r: str(r.get("first_seen")))}
-    with open(os.path.join(ROOT, "alerts", "state-public.json"), "w") as fh:
-        json.dump(pub, fh, indent=1)
+    }
 
 
 def one_pass(a):
@@ -414,10 +420,11 @@ def one_pass(a):
     if refused:
         # Not a config nit: somebody tried to demote a pager with 0 benign fires in
         # 42 days, and the run must not look like it complied.
-        print("thresholds: REFUSED to shadow " + ",".join(refused)
-              + " — measured pagers cannot be demoted by an override", file=sys.stderr)
+        private_print("thresholds: REFUSED to shadow " + ",".join(refused)
+                      + " — measured pagers cannot be demoted by an override",
+                      public="thresholds: an override was refused", file=sys.stderr)
     if shadow:
-        print(f"shadow: {len(shadow)} signal(s) recorded and digested, never paged")
+        private_print(f"shadow: {len(shadow)} signal(s) recorded and digested, never paged")
     evaluate(ctx)
     if a.parity_json:
         with open(a.parity_json, "w") as fh:
@@ -433,7 +440,8 @@ def one_pass(a):
                 ctx.fires.setdefault(f.signal, []).append(f)
                 findings[f.id] = f
         except Exception as e:  # fail-soft: the ledger signals must still land
-            print(f"balance_watch: soft-fail ({type(e).__name__})")
+            private_print(f"balance_watch: soft-fail ({type(e).__name__})",
+                          public=f"balance_watch: soft-fail ({type(e).__name__})")
     # ---- USD price cache: one fetch a day, committed, never blocking. Replay and CI
     # stay offline through --dry-run/--as-of, which is what they actually set; the
     # price fetch has its OWN switch. It used to honour SKIP_BALANCE_WATCH as well,
@@ -443,9 +451,10 @@ def one_pass(a):
         try:
             import price
             changed, note = price.refresh()
-            print(note)
+            private_print(note)
         except Exception as e:            # fail-soft, but say so — never silently
-            print(f"price: soft-fail ({type(e).__name__})")
+            private_print(f"price: soft-fail ({type(e).__name__})",
+                          public=f"price: soft-fail ({type(e).__name__})")
     state = load_state()
     new, escalated = diff_state(state, findings, ctx)
     n_inc = 0
@@ -454,27 +463,29 @@ def one_pass(a):
             folder, png = write_incident(f, ctx)
             state["open"][f.id]["view_png"] = png
             n_inc += 1
+        state["detector_health"] = detector_health(ctx, state)
         os.makedirs(os.path.dirname(STATE), exist_ok=True)
         with open(STATE, "w") as fh:
             json.dump(state, fh, indent=1)
-        write_public_state(state, ctx)
         heartbeat(ctx, state)
-    # ---- stdout policy: quiet = counts only, never entities/actions
+    # ---- stdout policy: quiet = counts only, never entities/actions — and in a
+    # public Actions log not even counts (notify/privlog.py): "detect: ran".
     tiers = lambda lst: {t: sum(1 for f in lst if f.tier == t) for t in ("page", "notify", "digest") if any(f.tier == t for f in lst)}
-    if a.quiet:
-        print(f"detect: rows={len(ctx.rows)} new={len(new)} escalated={len(escalated)} "
-              f"new_by_tier={tiers(new)} incidents={n_inc} mindset={ctx.mindset_source}")
+    if a.quiet or in_public_ci():
+        private_print(f"detect: rows={len(ctx.rows)} new={len(new)} escalated={len(escalated)} "
+                      f"new_by_tier={tiers(new)} incidents={n_inc} mindset={ctx.mindset_source}",
+                      public="detect: ran")
     else:
-        print(f"detect: {len(ctx.rows)} rows to {utc(ctx.t1)} UTC · mindset {ctx.mindset_source} "
+        print(f"detect: {len(ctx.rows)} rows to {utc(ctx.t1)} UTC · mindset {ctx.mindset_source} "  # log-ok: local-only branch (never in Actions)
               f"(age {ctx.mindset_age_h} h)")
         recent = [(sid, f) for sid, fires in sorted(ctx.fires.items()) for f in fires if f.ts >= ctx.t1 - DAY]
         by = {}
         for sid, f in recent:
             by.setdefault((sid, f.key, f.tier), []).append(f)
-        print(f"fires in last 24 h: {len(recent)} across {len(by)} (signal, entity) pairs")
+        print(f"fires in last 24 h: {len(recent)} across {len(by)} (signal, entity) pairs")  # log-ok: local-only branch
         for (sid, key, tier), lst in sorted(by.items(), key=lambda x: -TIER_RANK.get(x[0][2], 0)):
-            print(f"  {tier:6s} {sid:5s} {key[:10]:12s} x{len(lst)}  last {utc(lst[-1].ts)}  {lst[-1].detail[:60]}")
-        print(f"state: {len(new)} new, {len(escalated)} escalated, "
+            print(f"  {tier:6s} {sid:5s} {key[:10]:12s} x{len(lst)}  last {utc(lst[-1].ts)}  {lst[-1].detail[:60]}")  # log-ok: local-only branch
+        print(f"state: {len(new)} new, {len(escalated)} escalated, "  # log-ok: local-only branch
               f"{sum(1 for v in state['open'].values() if v.get('pending_send'))} pending send")
     hot = any(v.get("tier") in ("page", "notify") and not (v.get("ack_role") or v.get("ack_by")) and v.get("pending_send")
               for v in state["open"].values())

@@ -58,6 +58,7 @@ import datetime as dt
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from notify.privlog import private_print, in_public_ci  # noqa: E402  public logs: no status
 
 SYNTH_ID  = "selftest-synthetic"
 SYNTH_KEY = "SELFTEST-NOT-A-WALLET"
@@ -99,7 +100,10 @@ legs = []
 
 def leg(name, ok, detail=""):
     legs.append((bool(ok), name, detail))
-    print(f"  {'PASS' if ok else 'FAIL'}  {name}" + (f"  — {detail}" if detail else ""))
+    # The name is fixed text from this file; the detail can carry message ids, the
+    # owner line or live sizes, so a public Actions log gets the name only.
+    private_print(f"  {'PASS' if ok else 'FAIL'}  {name}" + (f"  — {detail}" if detail else ""),
+                  public=f"  {'PASS' if ok else 'FAIL'}  {name}")
     return bool(ok)
 
 
@@ -111,15 +115,16 @@ def _escalation_owner():
     against what a real page would actually say.
 
     It deliberately does NOT judge whether the name is a real person. Naming one is an
-    open item owned outside this repo (HANDOFF §6.6 — still "Po (interim)"), and a
+    open item owned outside this repo (HANDOFF §6.6 — still an interim name), and a
     leg that failed on it would turn the daily check red every morning for a reason
     nobody here can fix. A self-test that is red every day is a self-test nobody reads.
     What the leg checks is that the LINE is still there, which is the part that can
     disappear silently."""
     try:
-        v = json.loads((ROOT / "detect" / "thresholds.json").read_text()).get("escalation_owner")
+        v = _thresholds().get("escalation_owner")
     except Exception as e:
-        print(f"selftest: could not read escalation_owner ({type(e).__name__}: {e})", file=sys.stderr)
+        private_print(f"selftest: could not read escalation_owner ({type(e).__name__}: {e})",
+                      public="selftest: could not read escalation_owner", file=sys.stderr)
         return "UNASSIGNED"
     return str(v or "").strip() or "UNASSIGNED"
 
@@ -320,7 +325,7 @@ def _synthetic_chart(path):
         import views
         from signals import Finding
     except Exception as e:
-        print(f"selftest: the chart renderer did not import ({type(e).__name__}: {e})",
+        print(f"selftest: the chart renderer did not import ({type(e).__name__}: {e})",  # log-ok: exception type only
               file=sys.stderr)
         return False
     f = synthetic_finding("page")
@@ -431,7 +436,7 @@ def delete_messages(mids):
                          "I could not delete " + _esc("; ".join(stuck)) + ".", silent=True)
     telegram._log_out(note, "test")
     if not note.get("ok"):
-        print(f"selftest: the deletion notice ITSELF failed ({note.get('error')}) — "
+        print(f"selftest: the deletion notice ITSELF failed ({note.get('error')}) — "  # log-ok: Telegram API error only
               f"a page-shaped banner is standing in the channel with nothing explaining it",
               file=sys.stderr)
     return False
@@ -462,7 +467,8 @@ def sweep():
     for k in doomed: open_f.pop(k, None)
     for m in doomed_msgs: bm.pop(m, None)
     st_path.write_text(json.dumps(s, indent=1))
-    print(f"  sweep: removed {len(doomed)} synthetic finding(s) and {len(doomed_msgs)} message map entry(s)")
+    private_print(f"  sweep: removed {len(doomed)} synthetic finding(s) and {len(doomed_msgs)} message map entry(s)",
+                  public="  sweep: removed synthetic state")
     if not state_sync.push():
         print("  sweep: THE REMOVAL WAS NOT PERSISTED — synthetic state is still in the private repo")
         return False
@@ -471,10 +477,17 @@ def sweep():
 
 # ------------------------------------------------------------------ report
 
+def _thresholds():
+    """thresholds.json WITH the THRESHOLDS_JSON override — the same view explain.py
+    renders from. The committed file names a role, not a person; the live name
+    arrives in the secret, so reading the file alone would test the wrong line."""
+    from notify.explain import _thresholds as thr
+    return thr()
+
+
 def _owner():
     try:
-        return json.loads((ROOT / "detect" / "thresholds.json").read_text()).get(
-            "escalation_owner", "the on-call")
+        return _thresholds().get("escalation_owner") or "the on-call"
     except Exception:
         return "the on-call"
 
@@ -484,9 +497,11 @@ def report(ok):
              f"`{dt.datetime.now(dt.UTC).strftime('%Y-%m-%d %H:%M')} UTC` — "
              f"**{'all legs green' if ok else 'FAILED'}**", ""]
     for good, name, detail in legs:
-        lines.append(f"- {'✅' if good else '❌'} `{name}`" + (f" — {detail}" if detail else ""))
+        # The step summary and the log are both public on this repo: names only there.
+        shown = detail if (detail and not in_public_ci()) else ""
+        lines.append(f"- {'✅' if good else '❌'} `{name}`" + (f" — {shown}" if shown else ""))
     body = "\n".join(lines)
-    print("\n" + body)
+    print("\n" + body)  # log-ok: details stripped in Actions (report)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a") as fh: fh.write(body + "\n")
@@ -513,7 +528,7 @@ def report(ok):
                 + (f"\nRun log: {os.environ['RUN_URL']}" if os.environ.get("RUN_URL") else ""),
                 silent=False), "notice")
         except Exception as e:
-            print(f"selftest: could not post the failure notice ({type(e).__name__})")
+            print(f"selftest: could not post the failure notice ({type(e).__name__})")  # log-ok: exception type only
 
 
 def main():

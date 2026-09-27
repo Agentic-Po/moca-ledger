@@ -197,10 +197,10 @@ def main():
     a = ap.parse_args()
     if not a.show:
         changed, note = refresh(force=a.force)
-        print(note)
+        print(note)  # log-ok: CLI only; a public USD price
     doc = load()
     p, note = price_of("MOCA")
-    print(f"cache: {doc.get('fetched_at', 'none')} · MOCA={p} · {note}")
+    print(f"cache: {doc.get('fetched_at', 'none')} · MOCA={p} · {note}")  # log-ok: CLI only; a public USD price
     return 0
 
 

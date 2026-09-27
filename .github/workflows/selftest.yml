@@ -56,6 +56,9 @@ jobs:
 
       - name: End-to-end alerting self-test
         env:
+          # The bot operator's name/handle arrive here, not from the public file,
+          # so the render leg checks the same owner line a live page carries.
+          THRESHOLDS_JSON:    ${{ secrets.THRESHOLDS_JSON }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
           PRIVATE_REPO_PAT:   ${{ secrets.PRIVATE_REPO_PAT }}

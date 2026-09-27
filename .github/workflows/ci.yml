@@ -18,6 +18,14 @@ jobs:
       - run: pip install -q -r requirements.txt
       - name: PII gate
         run: python3 tests/test_pii.py --tree .
+      # The detector gate evaluates the real oracle, which is private now. Read-only,
+      # the same token crawl.yml restores with; a fork PR has no secrets and the gate
+      # then fails on the missing labels-lite.json, which is the honest outcome.
+      - name: Restore detector oracle (private repo)
+        env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
+        run: python3 notify/state_sync.py pull-oracle
+      - name: Quiet-log gate (no detector status in public Actions logs)
+        run: python3 tests/test_quiet_logs.py
       - name: State gate (size cap, restore fallback, no enrichment re-dispatch)
         run: python3 tests/test_state.py
       # Also runs inside crawl.yml, but that is every ten minutes on the live channel.

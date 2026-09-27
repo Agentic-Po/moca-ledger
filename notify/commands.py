@@ -18,6 +18,12 @@ ROOT  = pathlib.Path(__file__).resolve().parent.parent
 STATE = ROOT / "alerts" / "state.json"
 HOME  = pathlib.Path.home() / ".moca-ledger"
 
+try:                              # public Actions logs: no ack/case status
+    from privlog import private_print
+except ImportError:
+    sys.path.insert(1, str(ROOT))
+    from notify.privlog import private_print
+
 try:                              # the durable message ledger; see notify/msglog.py
     import msglog
 except ImportError:
@@ -82,7 +88,7 @@ def reply(text, to=None):
         r = api("sendMessage", **p)
         if not r.get("ok"):
             ok = False
-            print(f"commands: reply NOT delivered ({r.get('error')}) — "
+            private_print(f"commands: reply NOT delivered ({r.get('error')}) — "
                   f"the person who asked got nothing", file=sys.stderr)
         else:
             # People reply to my confirmations too. Recorded so "I cannot tell which
@@ -109,8 +115,14 @@ def _deny(uid, mid):
 
 
 def _owner_name():
+    """Who runs the bot, WITH the THRESHOLDS_JSON override applied: the committed
+    file is public and names a role; the person arrives through the secret."""
     try:
-        return json.loads((ROOT / "detect" / "thresholds.json").read_text()).get("escalation_owner", "the on-call")
+        try:
+            from explain import _thresholds
+        except ImportError:
+            from notify.explain import _thresholds
+        return _thresholds().get("escalation_owner") or "the on-call"
     except Exception:
         return "the on-call"
 
@@ -137,7 +149,7 @@ def _log_in(u):
                          outcome=OUTCOME.get("outcome") or "seen",
                          action=OUTCOME.get("action"))
     except Exception as e:
-        print(f"commands: msglog.record_in failed ({type(e).__name__})", file=sys.stderr)
+        private_print(f"commands: msglog.record_in failed ({type(e).__name__})", file=sys.stderr)
 
 
 def load(): return json.loads(STATE.read_text()) if STATE.exists() else {"open": {}, "telegram_offset": 0}
@@ -159,7 +171,7 @@ def find_by_reply(s, m):
         try:
             fid = msglog.resolve(mid)
         except Exception as e:
-            print(f"commands: msglog.resolve failed ({type(e).__name__})", file=sys.stderr)
+            private_print(f"commands: msglog.resolve failed ({type(e).__name__})", file=sys.stderr)
     if fid: return find(s, fid)
     return None, None
 
@@ -266,7 +278,7 @@ def _plain(f):
         try:
             return measured(f)
         except Exception as ex:
-            print(f"commands: measured() failed for {f.get('id')}: {ex!r}", file=sys.stderr)
+            private_print(f"commands: measured() failed for {f.get('id')}: {ex!r}", file=sys.stderr)
     return f.get("signal") or "an alert with no description"
 
 
@@ -338,9 +350,17 @@ def status_text(s):
     live = [f for f in op if not f.get("ack_by")]
     pages = [f for f in live if f.get("tier") == "page"]
     held = [f for f in live if f.get("pending_send")]
+    # Public run health + the private detector health (notify/health.py): the
+    # mind-set age no longer lives in the published heartbeat.json.
     hb = {}
-    try: hb = json.loads((ROOT / "heartbeat.json").read_text())
-    except Exception: pass
+    try:
+        try:
+            from health import load as _health
+        except ImportError:
+            from notify.health import load as _health
+        hb = _health(s, root=ROOT)
+    except Exception:
+        pass
 
     L = ["📋 <b>Where things stand</b>", ""]
     if not live:
@@ -377,7 +397,7 @@ def status_text(s):
     # looks like a stranger. Only a person gives an all-clear (§6.3). The thresholds
     # come from watchdog.py, which already announces both of these to this same group,
     # so this repeats what the channel has been told rather than disclosing anything
-    # new — which is why it lives here and not behind a /debug command (§7 is Po's call).
+    # new — which is why it lives here and not behind a /debug command (§7 is the operator's call).
     blind = []
     try:
         age = float(hb.get("mindset_age_h") or 0)
@@ -412,11 +432,12 @@ def main():
         # print the same line and exit 0. This is the only control surface in the
         # system; if it is dead the run must go red. crawl.yml still runs the sender
         # afterwards, so alerts keep flowing while this is broken.
-        print(f"commands: getUpdates FAILED ({r.get('error')}) — replies are NOT being read")
+        private_print(f"commands: getUpdates FAILED ({r.get('error')}) — replies are NOT being read",
+                      public="commands: getUpdates FAILED — replies are NOT being read")
         return 2
     ups = r.get("result") or []
     if not ups:
-        print("commands: no updates"); return 0
+        private_print("commands: no updates", public="commands: ok"); return 0
     changed = 0
     for u in ups:
         # The offset advances even if this update fails, and state is saved either way.
@@ -427,7 +448,7 @@ def main():
             changed += handle(s, u.get("message") or {})
         except Exception as e:
             OUTCOME.update(outcome="error", action=type(e).__name__)
-            print(f"commands: update skipped ({type(e).__name__})")
+            private_print(f"commands: update skipped ({type(e).__name__})")
             try:
                 reply("\u26a0\ufe0f I could not process that message \u2014 <b>your case state was NOT changed</b>. "
                       "Send <code>/cases</code> to see where things stand.", (u.get("message") or {}).get("message_id"))
@@ -436,16 +457,17 @@ def main():
         finally:
             _log_in(u)
     save(s)
-    print(f"commands: {len(ups)} update(s), {changed} state change(s)")
+    private_print(f"commands: {len(ups)} update(s), {changed} state change(s)", public="commands: ok")
     if UNDELIVERED:
         # The state change (if any) is saved above on purpose — the decision the
         # person made is real even when the confirmation of it did not land. What
         # must NOT happen is the run reporting green while somebody is waiting for
         # an answer that Telegram refused.
         for u in UNDELIVERED:
-            print(f"commands: undelivered reply to message {u['reply_to']}: {u['starts']!r}",
+            private_print(f"commands: undelivered reply to message {u['reply_to']}: {u['starts']!r}",
                   file=sys.stderr)
-        print(f"commands: {len(UNDELIVERED)} reply/replies NOT delivered — the run is RED")
+        private_print(f"commands: {len(UNDELIVERED)} reply/replies NOT delivered — the run is RED",
+                      public="commands: a reply was NOT delivered — the run is RED")
         return 3
     return 0
 
@@ -506,7 +528,7 @@ def handle(s, m):
     chat = str((m.get("chat") or {}).get("id", ""))
     if CHAT() and chat and chat != str(CHAT()):
         OUTCOME.update(outcome="ignored: another chat", redact=True)
-        print(f"commands: ignoring a message from another chat (id withheld)")
+        private_print(f"commands: ignoring a message from another chat (id withheld)")
         return 0
     # fail CLOSED: with no authorised list configured nobody may change state
     allowed = bool(ACK()) and uid in ACK()
@@ -532,7 +554,7 @@ def handle(s, m):
                 try:
                     what = msglog.describe_words(rt)
                 except Exception as e:
-                    print(f"commands: msglog.describe failed ({type(e).__name__})", file=sys.stderr)
+                    private_print(f"commands: msglog.describe failed ({type(e).__name__})", file=sys.stderr)
                 OUTCOME.update(outcome="unmatched", action="asked for the id")
                 if what:
                     reply(f"I saw your reply and I have <b>not</b> changed anything: you replied "
@@ -726,7 +748,7 @@ def handle(s, m):
         try:
             msglog.link(target, f.get("id"))
         except Exception as e:
-            print(f"commands: msglog.link failed ({type(e).__name__})", file=sys.stderr)
+            private_print(f"commands: msglog.link failed ({type(e).__name__})", file=sys.stderr)
             reply("I could not write that link down, so I have <b>not</b> promised it. "
                   "Use <code>/contained &lt;id&gt;</code> against the case directly.", mid)
             return 0

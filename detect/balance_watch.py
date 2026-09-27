@@ -40,6 +40,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, ROOT)
 
 from signals import Finding, ACTION, load_thresholds, utc  # noqa: E402
+from notify.privlog import private_print, in_public_ci  # noqa: E402  public logs: no status
 
 try:                       # single source of truth for the endpoint list
     from crawl import RPCS
@@ -206,15 +207,16 @@ def poll(root=ROOT, thresholds=None, quiet=False, write=True):
         f._state = d
         findings.append(f)
 
-    if quiet:   # counts only — never addresses (public Actions logs)
-        print(f"balance_watch: addresses={len(entries)} ok={len(entries) - skipped} "
-              f"stale={skipped} findings={len(findings)} elapsed={time.time() - t0:.0f}s")
+    if quiet or in_public_ci():   # counts only locally; in Actions not even counts
+        private_print(f"balance_watch: addresses={len(entries)} ok={len(entries) - skipped} "
+                      f"stale={skipped} findings={len(findings)} elapsed={time.time() - t0:.0f}s",
+                      public="balance_watch: ran")
     else:
-        print(f"balance_watch: {len(entries)} addresses, {skipped} stale, "
+        print(f"balance_watch: {len(entries)} addresses, {skipped} stale, "  # log-ok: local-only branch (never in Actions)
               f"{len(findings)} moved · {time.time() - t0:.0f}s")
         for row in evidence[1:]:
             mark = " <- moved" if any(row[0].startswith(a[:10]) for a in moved) else ""
-            print("  " + "  ".join(str(c).rjust(12) for c in row) + mark)
+            print("  " + "  ".join(str(c).rjust(12) for c in row) + mark)  # log-ok: local-only branch
     return findings
 
 
@@ -228,9 +230,9 @@ def main():
         print("balance_watch: skipped (SKIP_BALANCE_WATCH set)")
         return 0
     findings = poll(quiet=a.quiet, write=not a.dry_run)
-    if not a.quiet:
+    if not (a.quiet or in_public_ci()):
         for f in findings:
-            print(f"  notify {f.signal} {f.key[:15]}  " + " | ".join(f.headline))
+            print(f"  notify {f.signal} {f.key[:15]}  " + " | ".join(f.headline))  # log-ok: local-only branch
     return 0
 
 

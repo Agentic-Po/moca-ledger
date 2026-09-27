@@ -11,9 +11,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 def main():
-    hb = {}
-    try: hb = json.loads((ROOT / "heartbeat.json").read_text())
-    except Exception: pass
+    # Public run health + the private detector health (open findings live only in
+    # the private state; weekly.yml restores it before this runs).
+    from notify.health import load as _health
+    from notify.privlog import private_print
+    hb = _health()
     # observed cadence from the last commits the crawl wrote
     gaps = []
     try:
@@ -41,7 +43,7 @@ def main():
          f"observed run gap: p50 {p50} min · p95 {p95} min (n={len(gaps)})\n"
          f"open findings: {hb.get('open_findings')}\n"
          f"<i>set the healthchecks period from p95; silence on a Monday means both layers are down</i>", silent=True), "health")
-    print(json.dumps(stamp))
+    private_print(json.dumps(stamp), public="weekly: stamped")
     return 0
 
 if __name__ == "__main__": sys.exit(main())

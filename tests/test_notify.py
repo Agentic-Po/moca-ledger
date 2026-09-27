@@ -13,6 +13,7 @@ import contextlib, json, os, pathlib, re, sys, tempfile, time, urllib.error, io,
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from notify.privlog import private_print  # noqa: E402
 
 from notify import telegram, commands, state_sync, msglog, watchdog   # noqa: E402
 
@@ -27,7 +28,10 @@ RESULTS = []
 
 def check(name, cond, detail=""):
     RESULTS.append((bool(cond), name, detail))
-    print(f"  {'PASS' if cond else 'FAIL'}  {name}" + (f"  ({detail})" if detail else ""))
+    # Detail can quote the LIVE state (crawl.yml runs this after the restore), so a
+    # public Actions log gets the check name only — notify/privlog.py.
+    private_print(f"  {'PASS' if cond else 'FAIL'}  {name}" + (f"  ({detail})" if detail else ""),
+                  public=f"  {'PASS' if cond else 'FAIL'}  {name}")
     return bool(cond)
 
 
@@ -131,7 +135,7 @@ def t_incident():
     check("six quiet hours DOES end an incident (the TTL is reachable)", not on2)
 
     # ---- the run that OPENS an incident sends ONE loud message, not N.
-    # Po's decision 1. This test previously asserted the opposite and CI defended
+    # The operator's decision 1. This test previously asserted the opposite and CI defended
     # it: with classes seeded empty, every distinct signal already pending counted
     # as "first of its class" and the opening run rang once per signal.
     s, sent = run(Bed([_finding(i, signal=str(10 + i)) for i in range(5)]))
@@ -157,7 +161,7 @@ def t_incident():
           telegram._sound_reason(_finding(71, signal="10", moca_since=9e9),
                                  {"classes": ["10"], "cashouts": []}) is None)
 
-    # ---- Po's fourth trigger: the rate doubling. Computed AND sounded, once.
+    # ---- the operator's fourth trigger: the rate doubling. Computed AND sounded, once.
     quad = [_finding(80 + i, signal="10") for i in range(4)]
     s6, sent6 = run(Bed(quad, loud_held=0, arrivals_prev=2,
                         incident=dict(inc_on, last_ts=now)))
@@ -1164,7 +1168,7 @@ def t_owner():
 
     On 20 August 2.4M of the 2.66M MOCA was paid out AFTER the first alert fired:
     authority, not lead time, was the bottleneck. The page then printed
-    "Who to ask  Po (interim)" — a placeholder that reads as an answer, which is
+    "Who to ask  <operator> (interim)" — a placeholder that reads as an answer, which is
     worse than printing nothing (phase3 critic #9)."""
     print("\nwho can pause")
     from notify import explain
@@ -1191,15 +1195,15 @@ def t_owner():
             if sys.modules.get(name) is not None:
                 sys.modules[name]._thresholds = real
 
-    page = _finding(1, tier="page", signal="10", owner="Po (interim) — @Po_Chu on Telegram",
+    page = _finding(1, tier="page", signal="10", owner="the bot operator (interim)",
                     threshold=50, value=148, detail="148/60min", window="60min")
-    notif = _finding(2, tier="notify", signal="10n", owner="Po (interim) — @Po_Chu on Telegram",
+    notif = _finding(2, tier="notify", signal="10n", owner="the bot operator (interim)",
                      threshold=50, value=60, detail="60/6h", window="6h")
     try:
         bed(owner=None, contact=None, commitment_min=None, agreed_ts=None)
         m = explain.humanise(page)
         check("with nobody named, a page says UNASSIGNED in so many words", "UNASSIGNED" in m)
-        check("a page no longer tells Po to ask Po", "Who to ask" not in m)
+        check("a page no longer tells the operator to ask the operator", "Who to ask" not in m)
         check("the UNASSIGNED block says what an empty kill switch cost in August",
               "2.4M" in m and "20 August" in m)
         check("the bot's own contact is labelled as unable to stop a payout",
@@ -1208,16 +1212,16 @@ def t_owner():
         check("the fallback renderer says UNASSIGNED as well",
               "UNASSIGNED" in telegram._render_terse(page))
 
-        bed(owner="Po (interim)", contact="@Po_Chu", commitment_min=30, agreed_ts="2026-08-23")
+        bed(owner="Somebody (interim)", contact="their Telegram", commitment_min=30, agreed_ts="2026-08-23")
         check("a placeholder typed into kill_switch.owner is still UNASSIGNED",
               explain.kill_switch() is None and "UNASSIGNED" in explain.humanise(page))
 
-        bed(owner="A Real Person", contact="@handle", commitment_min=None, agreed_ts="2026-08-23")
+        bed(owner="A Real Person", contact="their Telegram", commitment_min=None, agreed_ts="2026-08-23")
         check("a kill switch with no agreed response time is still UNASSIGNED",
               explain.kill_switch() is None and "UNASSIGNED" in explain.humanise(page))
 
-        bed(owner="A Real Person", contact="@handle on Telegram", commitment_min=30,
-            agreed_ts="2026-08-24T09:00:00+00:00", agreed_by="Po")
+        bed(owner="A Real Person", contact="their Telegram", commitment_min=30,
+            agreed_ts="2026-08-24T09:00:00+00:00", agreed_by="the operator")
         m2 = explain.humanise(page)
         check("a real owner prints the name and the minutes they agreed to",
               "A Real Person" in m2 and "30 minutes" in m2 and "UNASSIGNED" not in m2)
@@ -1231,7 +1235,7 @@ def t_owner():
     # money should be named in the group, not on the internet.
     old_env = os.environ.get("THRESHOLDS_JSON")
     os.environ["THRESHOLDS_JSON"] = json.dumps(
-        {"kill_switch": {"owner": "A Real Person", "contact": "@handle",
+        {"kill_switch": {"owner": "A Real Person", "contact": "their Telegram",
                          "commitment_min": 30, "agreed_ts": "2026-08-24T09:00:00+00:00"}})
     try:
         check("the owner can arrive from the secret, so the public file need not name them",
@@ -1326,20 +1330,22 @@ def t_cut_list():
 
         # (c) /status must not read as an all-clear while the detector is blind.
         d = pathlib.Path(tempfile.mkdtemp(prefix="moca-hb-"))
+        # Run health is public (heartbeat.json); the mind-set age is PRIVATE and
+        # arrives in the state's detector_health (notify/health.py).
         (d / "heartbeat.json").write_text(json.dumps(
-            {"run_ts": dt.datetime.now(dt.UTC).isoformat(),
-             "mindset_age_h": 61.0, "lag_blocks": 5400}))
+            {"run_ts": dt.datetime.now(dt.UTC).isoformat(), "lag_blocks": 5400}))
         commands.ROOT = d
-        txt = commands.status_text({"open": {}})
+        txt = commands.status_text({"open": {}, "detector_health": {"mindset_age_h": 61.0}})
+        check("/status reads the mind-set age from the private state, not the public file",
+              "list of platform addresses is 61 h old" in txt, txt[-200:])
         check("/status says what it is blind to instead of reading as an all-clear",
               "degraded" in txt, txt[-160:])
         check("/status still prints no machine jargon",
               "lag" not in txt and "rows" not in txt and "mindset" not in txt)
         (d / "heartbeat.json").write_text(json.dumps(
-            {"run_ts": dt.datetime.now(dt.UTC).isoformat(),
-             "mindset_age_h": 3.0, "lag_blocks": 12}))
+            {"run_ts": dt.datetime.now(dt.UTC).isoformat(), "lag_blocks": 12}))
         check("a healthy run adds no degradation line at all",
-              "degraded" not in commands.status_text({"open": {}}))
+              "degraded" not in commands.status_text({"open": {}, "detector_health": {"mindset_age_h": 3.0}}))
         # Asserted on the object commands.py actually bound, not on the test module's
         # own import — otherwise commands.py could pick up a different module entirely
         # and this check would keep passing.

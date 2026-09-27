@@ -46,6 +46,13 @@ jobs:
         env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
         run: python3 notify/state_sync.py pull
 
+      # Same rule, same token, read-only: the salted-hash oracle (labels-lite,
+      # watchlist, mindset) lives in moca-ledger-private:oracle/ and is gitignored
+      # here. Missing it silently changes what the detector sees, so it stops the job.
+      - name: Restore detector oracle (private repo)
+        env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
+        run: python3 notify/state_sync.py pull-oracle
+
       - name: Detect
         id: detect
         if: hashFiles('detect/run.py') != ''
@@ -62,6 +69,8 @@ jobs:
           fi
           python3 detect/run.py --quiet
 
+      # Public Actions logs carry no detector status (notify/privlog.py): every live
+      # step prints number-free lines here. tests/test_quiet_logs.py holds that line.
       # ABOVE the PII gate on purpose (moved 2026-08-30): catalog.json and
       # DATASETS.md are written by this step and committed by `git add -A`
       # below, so with the rebuild after the gate the gate only ever scanned
@@ -134,7 +143,7 @@ jobs:
           python3 notify/watchdog.py || { echo "watchdog.py exited non-zero"; rc=1; }
           python3 notify/telegram.py --send-pending || { echo "telegram.py --send-pending exited non-zero"; rc=1; }
           # Proof of life, once per UTC day, keyed off state — so calling it every run is
-          # cheap and idempotent. Po's ask: a channel that is silent for days cannot be
+          # cheap and idempotent. The operator's ask: a channel that is silent for days cannot be
           # told apart from one that is dead. It refuses to be reassuring when the
           # detector is running but blind, and it goes red if it could not be delivered,
           # because the one message whose job is to prove we are not silent must not fail

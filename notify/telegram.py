@@ -7,6 +7,11 @@ State:  alerts/state.json  — written BEFORE sending so a retry never double-se
 import argparse, json, os, sys, time, urllib.request, urllib.parse, pathlib, datetime as dt
 
 ROOT  = pathlib.Path(__file__).resolve().parent.parent
+try:                                   # public Actions logs: no detector status
+    from privlog import private_print
+except ImportError:
+    sys.path.insert(1, str(ROOT))
+    from notify.privlog import private_print
 STATE = ROOT / "alerts" / "state.json"
 API   = "https://api.telegram.org/bot{tok}/{m}"
 TOK   = lambda: os.environ.get("TELEGRAM_BOT_TOKEN") or _read("telegram_bot_token")
@@ -49,7 +54,7 @@ def _post(method, data=None, files=None):
                 try:
                     wait = int(json.loads(body).get("parameters", {}).get("retry_after", 5))
                 except Exception:
-                    print("telegram: 429 with an unparseable body — backing off 5s", file=sys.stderr)
+                    private_print("telegram: 429 with an unparseable body — backing off 5s", file=sys.stderr)
                 if attempt == 2:
                     return {"ok": False, "error": "http 429 (rate limited)"}
                 time.sleep(min(max(wait, 1), 30))
@@ -79,7 +84,7 @@ def send(text, photo=None, silent=False):
                                 "disable_notification": "true" if silent else "false"},
                   {"photo": (pathlib.Path(photo).name, pathlib.Path(photo).read_bytes())})
         if r.get("ok"): return r
-        print(f"sendPhoto failed ({r.get('error')}) — sending as text", file=sys.stderr)
+        private_print(f"sendPhoto failed ({r.get('error')}) — sending as text", file=sys.stderr)
     r = _post("sendMessage", {"chat_id": CHAT(), "text": text[:4096], "parse_mode": "HTML",
                               "disable_web_page_preview": "true",
                               "disable_notification": "true" if silent else "false"})
@@ -90,7 +95,7 @@ def send(text, photo=None, silent=False):
         if mid: d["reply_to_message_id"] = mid
         p = _post("sendPhoto", d, {"photo": (pathlib.Path(photo).name, pathlib.Path(photo).read_bytes())})
         if not p.get("ok"):
-            print(f"chart not delivered for the message above: {p.get('error')}", file=sys.stderr)
+            private_print(f"chart not delivered for the message above: {p.get('error')}", file=sys.stderr)
         else:
             # The chart is now the most visually prominent object on the page, so it
             # is what people reply to. Hand its id back so the caller can map it to
@@ -139,7 +144,7 @@ def _log_out(r, kind, case_id=None, reply_to=None):
             # The detached chart: the most reply-attractive object on the page.
             msglog.record_out(extra, "chart", case_id=case_id, reply_to=mid)
     except Exception as ex:
-        print(f"msglog: not recorded ({type(ex).__name__}) — reply matching may miss "
+        private_print(f"msglog: not recorded ({type(ex).__name__}) — reply matching may miss "
               f"this message", file=sys.stderr)
 
 
@@ -159,7 +164,7 @@ def render(f):
             return humanise(f)
         except Exception as ex:
             # Never silent: the run log says why, and the message itself says it fell back.
-            print(f"explain.humanise failed for {f.get('id','?')}: {ex!r}", file=sys.stderr)
+            private_print(f"explain.humanise failed for {f.get('id','?')}: {ex!r}", file=sys.stderr)
     return _render_terse(f)
 
 
@@ -192,7 +197,7 @@ def _render_terse(f):
             from notify.explain import pause_terse
             owner_line = pause_terse(f)
         except Exception as ex:
-            print(f"explain.pause_terse unavailable ({ex!r}) — using the literal", file=sys.stderr)
+            private_print(f"explain.pause_terse unavailable ({ex!r}) — using the literal", file=sys.stderr)
     lines.append(owner_line)
     lines.append(f"\n<i>as of block {f.get('as_of_block','?')}</i>")
     reply = "<b>Reply to this message with:</b>  contained · reported · watching · closed"
@@ -204,7 +209,7 @@ def _render_terse(f):
             from notify.explain import REPLY_LINE
             reply = REPLY_LINE
         except Exception as ex:
-            print(f"explain.REPLY_LINE unavailable ({ex!r}) — using the literal", file=sys.stderr)
+            private_print(f"explain.REPLY_LINE unavailable ({ex!r}) — using the literal", file=sys.stderr)
     lines.append(reply)
     return "\n".join(lines)
 
@@ -308,7 +313,7 @@ def _hedge():
         from notify.explain import HEDGE
         return HEDGE
     except Exception as ex:
-        print(f"explain.HEDGE unavailable ({ex!r}) — using the literal", file=sys.stderr)
+        private_print(f"explain.HEDGE unavailable ({ex!r}) — using the literal", file=sys.stderr)
         return "payment type inferred from size on-chain — unconfirmed"
 
 
@@ -387,7 +392,7 @@ DOUBLED_SOUND = "new alerts have at least doubled since the last run"
 def _sound_reason(f, inc):
     """Why this finding is allowed to make a sound inside an incident. None = silent.
 
-    Three of Po's four triggers are properties of the finding and live here. The
+    Three of the operator's four triggers are properties of the finding and live here. The
     fourth — the rate doubling — is a property of the RUN and is applied once, in
     _sound_plan.
 
@@ -414,7 +419,7 @@ def _sound_plan(batch, inc, doubled):
       from one pass and the sends from another, while the send loop appended to
       inc["classes"] underneath it — so the header could promise a sound that
       never arrived.
-    * "The rate doubling" is Po's fourth trigger and is a run-level fact. It sounds
+    * "The rate doubling" is the operator's fourth trigger and is a run-level fact. It sounds
       ONCE, on the first batch member that has no other reason; firing it on all
       six would be the burst of pings incident mode exists to prevent.
     """
@@ -487,7 +492,7 @@ def _incident_state(s, loud, arrivals, now):
         # Seeded from the whole queue, not just the six that will be shown: the held
         # remainder is the same wave, and it arrives under its own loud header later.
         # `cashouts` is NOT seeded — a first cash-out to a destination is one of the
-        # things Po said a person must hear even in the opening minute.
+        # things the operator said a person must hear even in the opening minute.
         inc = {"started": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
                "runs": 0, "cashouts": [], "last_ts": now,
                "classes": sorted({str(f.get("signal") or "?") for f in loud})}
@@ -617,7 +622,7 @@ def send_pending():
     inc, incident_on, doubled = _incident_state(s, loud, arrivals, now)
     if not incident_on and s.get("incident"):
         prev_inc = s.pop("incident")
-        print("incident: over (six hours with nothing loud)")
+        private_print("incident: over (six hours with nothing loud)")
         _log_out(send("🔕 <b>Incident mode off.</b> Alerts are loud again.\n"
              "<i>This is not an all-clear — only a person says that. It means six hours "
              "passed with nothing new loud enough to alert on. Send <code>/cases</code> "
@@ -640,7 +645,7 @@ def send_pending():
             s["incident"] = inc          # carried by the TTL, not by this run being busy
         s["last_run_ts"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
         save_state(s)
-        print("nothing pending"); return 0
+        private_print("nothing pending"); return 0
 
     # ---- what gets a slot. Tier-first alone starved the one alert with a real
     # freeze window: S-X is `notify`, so during a burst (>= 6 pages pending, which
@@ -674,10 +679,10 @@ def send_pending():
         inc["header_ok"] = header_ok                     # delivered chunk 2 would mute the run
         inc["header_error"] = err
         save_state(s)
-        print(f"incident: header ok={header_ok} arrivals={arrivals} queue={len(loud)} "
+        private_print(f"incident: header ok={header_ok} arrivals={arrivals} queue={len(loud)} "
               f"shown={len(batch)} doubled={doubled}")
         if not header_ok:
-            print("incident: header undelivered — findings below stay loud")
+            private_print("incident: header undelivered — findings below stay loud")
 
     for f in batch:
         reason = plan.get(str(f.get("id"))) if (incident_on and header_ok) else None
@@ -721,7 +726,7 @@ def send_pending():
                     co.append(addr)
                     del co[:-CASHOUT_KEEP]               # bounded: one incident object, ~430 findings
         save_state(s)
-        print(f["tier"], f.get("signal"), "->", r.get("ok"), "silent" if silent else "loud")
+        private_print(f"{f['tier']} {f.get('signal')} -> {r.get('ok')} {'silent' if silent else 'loud'}")
 
     if incident_on:
         inc["runs"] = int(inc.get("runs") or 0) + 1
@@ -746,7 +751,7 @@ def send_pending():
                  f"the findings are in the repo index", silent=False)
         _log_out(a, "notice")
         if not a.get("ok"):
-            print(f"telegram: the send-failure alarm ITSELF failed ({a.get('error')})", file=sys.stderr)
+            private_print(f"telegram: the send-failure alarm ITSELF failed ({a.get('error')})", file=sys.stderr)
             s["send_failure_alarmed"] = False          # so the next failure still tries
             save_state(s)
     elif not failed_now and s.get("send_failure_alarmed"):
@@ -769,7 +774,7 @@ def send_pending():
         if not ok:
             for f in digest:                     # not delivered -> keep it pending
                 f["pending_send"] = True
-            print("digest: send failed, left pending")
+            private_print("digest: send failed, left pending")
         save_state(s)
     return 0
 
@@ -782,7 +787,7 @@ def gate_failed(url):
     told, or "quiet and nobody knows why" has simply moved one step upstream."""
     s = load_state(); last = s.get("last_gate_post", 0); now = time.time()
     if now - last < 6 * 3600:
-        print("gate-failure post deduped"); return 0
+        private_print("gate-failure post deduped", public="gate-failure post deduped"); return 0
     s["last_gate_post"] = now; save_state(s)
     _log_out(send(
         "\u26a0\ufe0f <b>My own behaviour checks are failing.</b>\n"
@@ -795,7 +800,7 @@ def gate_failed(url):
 
 
 # ------------------------------------------------------------------ proof of life
-# Po's ask, and it runs straight into rule 3 (never say all-clear). A channel that is
+# The operator's ask, and it runs straight into rule 3 (never say all-clear). A channel that is
 # silent for days is indistinguishable from a channel that is dead, and this system's
 # defining failure mode is "quiet, and nobody knows why". So once a day it says it is
 # running — and the whole design problem is saying that without it becoming a
@@ -813,8 +818,14 @@ HEARTBEAT_MAX_LAG = 900       # blocks behind tip before "running" stops meaning
 
 
 def _hb_doc():
+    """Public run health + the PRIVATE detector health (notify/health.py). The
+    detector half — mind-set age, fires, override errors — is no longer published."""
     try:
-        return json.loads((ROOT / "heartbeat.json").read_text())
+        try:
+            from health import load as _health
+        except ImportError:
+            from notify.health import load as _health
+        return _health(load_state(), root=ROOT)
     except Exception:
         return {}
 
@@ -853,7 +864,7 @@ def heartbeat(force=False):
     hb = _hb_doc()
     today = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d")
     if not force and s.get("last_heartbeat_day") == today:
-        print("heartbeat: already sent today"); return 0
+        private_print("heartbeat: already sent today", public="heartbeat: ok"); return 0
 
     block = hb.get("ledger_last") or "?"
     rows = int(hb.get("rows_total") or 0)
@@ -888,11 +899,12 @@ def heartbeat(force=False):
         s["last_heartbeat_day"] = today
         s["last_heartbeat_rows"] = rows
         save_state(s)
-        print(f"heartbeat: sent ({'blind' if blind else 'ok'}, {scanned if scanned else '?'} new rows)")
+        private_print(f"heartbeat: sent ({'blind' if blind else 'ok'}, {scanned if scanned else '?'} new rows)",
+                      public="heartbeat: ok")
     else:
         # Never silent about the thing whose entire job is to prove we are not silent.
-        print(f"heartbeat: NOT delivered ({r.get('error')}) — the channel has no proof of life "
-              f"today", file=sys.stderr)
+        private_print(f"heartbeat: NOT delivered ({r.get('error')}) — the channel has no proof of life "
+                      f"today", public="heartbeat: NOT delivered", file=sys.stderr)
         return 3
     return 0
 
@@ -900,7 +912,7 @@ def heartbeat(force=False):
 def failure(url):
     s = load_state(); last = s.get("last_failure_post", 0); now = time.time()
     if now - last < 6 * 3600 and s.get("last_run_ok", True):
-        print("failure post deduped"); return 0
+        private_print("failure post deduped", public="failure post deduped"); return 0
     s["last_failure_post"] = now; s["last_run_ok"] = False; save_state(s)
     _log_out(send(f"🔴 <b>detector run failed</b>\n{url}", silent=False), "notice"); return 0
 
@@ -917,5 +929,9 @@ if __name__ == "__main__":
     if a.gate_failed: sys.exit(gate_failed(a.gate_failed))
     if a.heartbeat:   sys.exit(heartbeat(force=a.force))
     if a.test:
-        r = send(a.test); _log_out(r, "test"); print(r); sys.exit(0)
-    sys.exit(send_pending())
+        r = send(a.test); _log_out(r, "test"); private_print(r); sys.exit(0)
+    rc = send_pending()
+    # The only line a public log gets from the send path: whether it ran, never what
+    # it sent, how many, at which tier, or whether an incident is open.
+    private_print(f"notify: send-pending rc={rc}", public="notify: ok" if rc == 0 else "notify: failed")
+    sys.exit(rc)

@@ -19,6 +19,7 @@ import base64, io, json, os, pathlib, sys, tempfile, urllib.error, urllib.reques
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from notify.privlog import private_print  # noqa: E402
 
 from notify import state_sync                      # noqa: E402
 from notify import request_enrichment as enrich    # noqa: E402
@@ -28,7 +29,9 @@ RESULTS = []
 
 def check(name, cond, detail=""):
     RESULTS.append((bool(cond), name, detail))
-    print(f"  {'PASS' if cond else 'FAIL'}  {name}" + (f"  ({detail})" if detail else ""))
+    # selftest.yml runs this against the LIVE state: public logs get the name only.
+    private_print(f"  {'PASS' if cond else 'FAIL'}  {name}" + (f"  ({detail})" if detail else ""),
+                  public=f"  {'PASS' if cond else 'FAIL'}  {name}")
     return bool(cond)
 
 
@@ -44,7 +47,7 @@ def finding(i, settled=False, fat=0):
         "as_of_block": 34512099 + i, "backfill": False, "type_verified": False,
         "unit_source": "frozen", "mindset_source": "posthog", "episode_fires": i % 30,
         "episode_first": "2026-08-19T13:10:00+00:00", "episode_last": "2026-08-21T01:30:00+00:00",
-        "owner": "Po (interim)", "escalation": "review before the next payout batch",
+        "owner": "the bot operator (interim)", "escalation": "review before the next payout batch",
         "detail": "one creator took an outsized share of reward payouts in the window " * 2,
         "headline": ["top1 share above the level that triggers a look",
                      "n above the minimum for this signal",

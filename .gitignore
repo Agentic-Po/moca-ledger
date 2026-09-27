@@ -16,3 +16,14 @@ alerts/.state_sha
 # the PRIVATE repo only. `git add -A` runs every ten minutes in crawl.yml; without
 # this line the first run after msglog is wired publishes identity data.
 alerts/msglog/
+
+# Detector status and the salted-hash oracle are PRIVATE (standing rule, 2026-09):
+#  * state-public.json was a hashed projection of every finding (hash, signal, tier,
+#    first_seen to the minute, acked) — a calibration oracle. No longer written.
+#  * labels-lite / watchlist / mindset are restored at run time from
+#    moca-ledger-private:oracle/ by `notify/state_sync.py pull-oracle`. They share
+#    one salt, and mindset's creation hours link hashes back to wallets.
+alerts/state-public.json
+labels/labels-lite.json
+detect/watchlist.json
+detect/mindset.json

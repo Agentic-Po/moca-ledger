@@ -24,6 +24,12 @@ import os
 import re
 import sys
 
+try:                              # public Actions logs: no detector status
+    from privlog import private_print as _private_print
+except ImportError:
+    sys.path.insert(1, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from notify.privlog import private_print as _private_print
+
 # title · what happened (format string) · why it matters · what to do ·
 # normal (what ordinary activity looks like, in words — never the trigger value)
 SIGNALS = {
@@ -508,7 +514,9 @@ def measured(f):
         try:
             s = fn(f)
         except Exception as ex:          # a broken builder must not be invisible
-            print(f"explain: measured({sig}) failed: {ex!r}", file=sys.stderr)
+            _private_print(f"explain: measured({sig}) failed: {ex!r}",
+                           public="explain: a measurement failed; card rendered without it",
+                           file=sys.stderr)
             s = None
         if s:
             return s
@@ -674,7 +682,7 @@ def money_lines(f):
 #: message may claim that somebody can stop a payout. Half a block is not an owner.
 _KS_REQUIRED = ("owner", "contact", "commitment_min", "agreed_ts")
 
-#: Words that still mean "nobody". `escalation_owner` reads "Po (interim)" today and
+#: Words that still mean "nobody". `escalation_owner` once read "<name> (interim)" and
 #: renders as a name, which is the worse failure: the reader sees the question
 #: answered. A stand-in typed into kill_switch.owner must not silence the UNASSIGNED
 #: block either, so the placeholder test lives in code, not in a convention.
@@ -701,7 +709,7 @@ def _thresholds():
         with open(os.path.join(ROOT, "detect", "thresholds.json")) as fh:
             thr = json.load(fh)
     except Exception as ex:
-        print(f"explain: cannot read thresholds.json ({ex!r}) — treating the kill "
+        print(f"explain: cannot read thresholds.json ({ex!r}) — treating the kill "  # log-ok: file read error, no status
               "switch as UNASSIGNED", file=sys.stderr)
         thr = {}
     env = os.environ.get("THRESHOLDS_JSON")
@@ -709,7 +717,7 @@ def _thresholds():
         try:
             thr.update(json.loads(env))
         except Exception as ex:
-            print(f"explain: THRESHOLDS_JSON override IGNORED, it does not parse "
+            print(f"explain: THRESHOLDS_JSON override IGNORED, it does not parse "  # log-ok: exception type only
                   f"({type(ex).__name__}); the committed defaults are live", file=sys.stderr)
     return thr
 
@@ -746,7 +754,7 @@ def pause_lines(f):
     """The kill-switch block for a message, as lines. Never empty.
 
     Every page ends by asking for a pause, and until now it then printed
-    "Who to ask  Po (interim)" — the alert telling Po to ask Po (council §5, vote 8).
+    "Who to ask  <operator> (interim)" — the alert telling the operator to ask themselves (council §5, vote 8).
     On 20 August 2.4M of the 2.66M MOCA was paid out AFTER the first alert fired
     because nobody held this authority, so an unheld kill switch is printed as unheld,
     loudly, and the bot's own contact is labelled as what it is.

@@ -30,10 +30,10 @@ def main():
     p.add_argument("--json", default=None, help="write the summary as JSON here")
     a = p.parse_args()
     ctx, res = replay(a.as_of, a.data)
-    print(f"replay: {len(ctx.rows)} rows · mindset {ctx.mindset_source}")
-    print(f"{'signal':10s} {'fires':>6s} {'episodes':>8s} {'fires/d':>8s}  {'first fire':16s} {'first page':16s}")
+    print(f"replay: {len(ctx.rows)} rows · mindset {ctx.mindset_source}")  # log-ok: local replay CLI
+    print(f"{'signal':10s} {'fires':>6s} {'episodes':>8s} {'fires/d':>8s}  {'first fire':16s} {'first page':16s}")  # log-ok: local replay CLI
     for sid, r in res.items():
-        print(f"{sid:10s} {r['fires']:6d} {r['episodes']:8d} {r['fires_per_day']:8.2f}  "
+        print(f"{sid:10s} {r['fires']:6d} {r['episodes']:8d} {r['fires_per_day']:8.2f}  "  # log-ok: local replay CLI
               f"{r['first_fire'] or '-':16s} {r['first_page'] or '-':16s}")
     if a.json:
         with open(a.json, "w") as fh:

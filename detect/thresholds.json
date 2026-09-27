@@ -18,7 +18,7 @@
  "inv_burst_n": 25,
  "inv_burst_organic_max": 10,
  "shadow_signals": ["INV-10", "INV-11"],
- "shadow_note": "signal ids that run in shadow: evaluated, written to alerts/state.json and incidents/, named in the silent digest, but demoted to digest so they cannot page, sound or open the hot loop. detect/signals/__init__.py SHADOW_NEVER refuses 10/11/15/4b/S-F/S-X whatever this list says. INV-10 and INV-11 are here because every fire either produces on the committed ledger belongs to one creator labelled benign, and invoke rewards have been paused since 2026-08-21 13:51 UTC so there is no traffic to calibrate on. A person takes them out of shadow after re-measuring on post-un-pause data.",
+ "shadow_note": "signal ids that run in shadow: evaluated, written to alerts/state.json and incidents/, named in the silent digest, but demoted to digest so they cannot page, sound or open the hot loop. detect/signals/__init__.py SHADOW_NEVER refuses 10/11/15/4b/S-F/S-X whatever this list says. A signal belongs here while its normal range has not been measured on enough organic traffic; a person takes it out of shadow after re-measuring, by commit. Why a given signal is in shadow is recorded in the private repo, not here.",
  "worker_hour_cap": 1750,
  "fanin_k_notify": 5,
  "fanin_k_page": 10,
@@ -69,8 +69,8 @@
   "budget_s": 90,
   "cashout_sound_min": 1000
  },
- "escalation_owner": "Po (interim) \u2014 @Po_Chu on Telegram",
- "escalation_note": "Who runs this bot and can add someone to the on-call list. This is NOT the kill switch: Po cannot stop a Treasury payout. notify/commands.py names this person when it refuses a command, so a colleague who is turned away has a route in.",
+ "escalation_owner": "the bot operator",
+ "escalation_note": "Who runs this bot and can add someone to the on-call list. This is NOT the kill switch: the bot operator cannot stop a Treasury payout. notify/commands.py names this person when it refuses a command, so a colleague who is turned away has a route in. This file is PUBLIC, so the committed value is a role; the live name and contact are set through the THRESHOLDS_JSON secret (same mechanism as kill_switch), which overrides this key at runtime.",
  "kill_switch": {
   "note": "The platform person who can pause one creator's rewards. On 2026-08-20, 2,400,000 of the 2,660,046 MOCA left AFTER the first alert fired: authority, not lead time, was the bottleneck. owner, contact, commitment_min and agreed_ts must be filled together, from a real commitment recorded in council/un-pause-runbook.md in the private repo. If any is empty, or the owner still reads interim/TBD/UNASSIGNED, every page prints the UNASSIGNED block loudly. Do not fill these in to make that line go away. This file is PUBLIC: prefer setting the block through the THRESHOLDS_JSON secret so the one person who can stop the money is named in the group and not on the internet.",
   "owner": null,

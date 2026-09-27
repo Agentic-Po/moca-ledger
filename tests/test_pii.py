@@ -25,6 +25,29 @@ DENY = [
     ("private domain",       re.compile(r"\b(gmail|outblaze|animocabrands|cryptoslam|gamaa|necub|suarj|tempomail|agentmail|imgfx|animatimg|imageeditgpt|aifotoeditor|theeditai|aniimate|animateany|aminating|aitextextractor|dropcode|bekri|duojumbo|wzjpj|mfxis|anogz|jgkcr|hidesit|ittiv|beiwoh)\.[a-z]{2,}", re.I)),   # pii-ok
     ("action word in public", re.compile(r"(?<![\w/])(freeze[ -]packet|pause creator|kill[- ]switch owner)", re.I)),   # pii-ok
 ]
+# Identity rules for the PUBLIC TREE only. Deliberately not in DENY: notify/selftest.py
+# borrows DENY to scan rendered Telegram copy, and the private group is exactly where
+# the bot operator's live name and handle belong (they arrive via THRESHOLDS_JSON).
+# A handle is @ + a letter + 3 or more word chars, not glued to a preceding word (so
+# emails, `actions/checkout@v4` and `/start@OtherBot` do not count); URLs, inline
+# `code` spans and Python decorator lines are stripped before matching.
+IDENTITY = [
+    ("social handle",        re.compile(r"(?<![\w.@/+-])@[A-Za-z]\w{3,}")),
+    ("owner name",           re.compile(r"\bpo[ _.\-]?chu\b|\bpochu\d*", re.I)),   # pii-ok
+    ("owner first name",     re.compile(r"(?<![\w-])Po(?:'s)?(?![\w-])")),   # pii-ok
+]
+_URL_RX  = re.compile(r"[a-z][a-z0-9+.-]*://\S+", re.I)
+_CODE_RX = re.compile(r"`[^`]*`")
+
+
+def identity_hits(line, suffix=""):
+    """(rule name, match) for every handle/name the IDENTITY rules find on one line."""
+    if suffix == ".py" and line.lstrip().startswith("@"):
+        return []                                   # a decorator, not a person
+    text = _CODE_RX.sub(" ", _URL_RX.sub(" ", line))
+    return [(name, m.group(0)) for name, rx in IDENTITY for m in [rx.search(text)] if m]
+
+
 BAD_NAMES = re.compile(r"(minds\.csv|humans\.csv|topup\.csv|events_identify|events_raw|bank_transfers\.csv|labels\.json$|identity-lists|warehouse|reconcile-inputs|analysis/|council/)")
 ALLOW_LINE = re.compile(r"pii-ok")   # explicit per-line escape hatch
 
@@ -98,6 +121,8 @@ def main():
             for name, rx in DENY:
                 m = rx.search(line)
                 if m: hits.append((rel, i, name, m.group(0)[:60]))
+            for name, frag in identity_hits(line, p.suffix):
+                hits.append((rel, i, name, frag[:60]))
             for a in ADDR_RX.findall(line):                      # bare-address rule
                 if a.lower() not in PUBLIC_ADDR:
                     hits.append((rel, i, "wallet address (operational intelligence)", a)); break

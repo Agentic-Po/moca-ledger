@@ -137,7 +137,8 @@ def _heartbeat_stamps():
     return [(hb.get("run_ts") or "")[:19]]
 
 
-PRIVATE_NAMES = {"exit_watch.json"}
+# restored from the private repo at run time; present on disk, never published
+PRIVATE_NAMES = {"exit_watch.json", "labels-lite.json"}
 
 PUBLIC = [
     dict(name="ledger", path=["data/"], kind="ledger", live=True, measure=_ledger_stamps,
@@ -146,17 +147,17 @@ PUBLIC = [
          provenance="eth_getLogs over the MOCA contract on Base, adaptive window, resumable via state.json; timestamps derived from Base's fixed 2s block time (verified exact over 2M blocks)",
          not_included="MOCA Transfer events only — no other token, no ETH, no internal calls, and no USD pricing (this repo never prices a row)"),
     dict(name="labels", path=["labels/"], kind="oracle", live=False, measure=_label_stamps,
-         row_schema="public_addresses.json: infrastructure[], token_contracts{}, event_topics{}; allowlist.json; calendar.json: campaign windows; labels-lite.json",
+         row_schema="public_addresses.json: infrastructure[], token_contracts{}, event_topics{}; allowlist.json; calendar.json: campaign windows",
          update_cadence="hand-maintained; changes ride with a PR", expected_cadence_minutes=None,
          provenance="public infrastructure identified off-chain (treasury, reward source, cognition sink, AMM pools) plus campaign windows",
-         not_included="no account-level mapping of any kind; the excluded-address list is a salted hash set and exit_watch.json is private (see below)"),
+         not_included="no account-level mapping of any kind; the excluded-address list is a salted hash set; exit_watch.json and the hashed class labels (labels-lite.json) are private (see below)"),
     # snapshot=True: the file is REPLACED every crawl, so coverage.from moves
     # forward legitimately — check() only refuses a backwards move.
     dict(name="heartbeat", path=["heartbeat.json"], kind="derived", live=True, snapshot=True, measure=_heartbeat_stamps,
-         row_schema="run_ts, crawl_ok, detect_ok, notify_ok, rows_total, ledger_last, lag_blocks, mindset_age_h, open_findings, fires_last_24h_total",
+         row_schema="run_ts, crawl_ok, rows_total, ledger_last, lag_blocks",
          update_cadence="rewritten every crawl (10-minute cron)", expected_cadence_minutes=10,
          provenance="written by the crawl-detect-notify workflow at the end of each run",
-         not_included="counts and health flags only — no finding detail, no addresses, no thresholds"),
+         not_included="crawl run health only — no detector status of any kind (findings, tiers, fire counts, shadow signals, address-set age live in the private state), no addresses, no thresholds"),
 ]
 
 PRIVATE = [
@@ -164,6 +165,9 @@ PRIVATE = [
     dict(name="detect/balances.json", kind="derived", note="private — see companion doc"),
     dict(name="labels/exit_watch.json", kind="oracle", note="private — see companion doc"),
     dict(name="alerts/msglog/", kind="archive", note="private — see companion doc"),
+    dict(name="labels/labels-lite.json", kind="oracle", note="private — see companion doc"),
+    dict(name="detect/watchlist.json", kind="oracle", note="private — see companion doc"),
+    dict(name="detect/mindset.json", kind="oracle", note="private — see companion doc"),
 ]
 
 

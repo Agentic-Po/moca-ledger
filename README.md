@@ -17,13 +17,13 @@ organic baselines computed from the same ledger.
 |---|---|
 | `crawl.py` | Resumable crawler: `eth_getLogs` over the MOCA contract, polite pacing, adaptive window |
 | `data/YYYY-MM-DD.jsonl` | One row per transfer: `block, ts, tx, li, from, to, value` (raw wei) |
-| `detect/` | Detector code, aggregate organic baselines, salted-hash address sets |
+| `detect/` | Detector code, committed thresholds, aggregate organic baselines |
 | `labels/` | Public infrastructure addresses (treasury, reward source, cognition sink, AMMs) and campaign windows |
 | `catalog.py` | Measured catalog of every dataset here → `catalog.json` + `DATASETS.md` |
 | `tests/test_pii.py` | Gate that fails the build if anything privacy-sensitive enters the tree |
 | `tests/test_state.py` | Gate on the detector's memory: size cap, restore fallback, no enrichment re-dispatch |
 | `notify/selftest.py` | Daily end-to-end proof that an alert can still reach the channel |
-| `.github/workflows/` | 10-minute crawl + detect + notify loop, CI, monthly archive |
+| `.github/workflows/` | 10-minute crawl + detect + notify loop, CI, daily self-test, weekly keep-alive |
 
 Timestamps are derived from Base's fixed 2 s block time (verified exact over 2M blocks),
 so the crawler needs one RPC call per window and no per-block lookups.
@@ -32,8 +32,15 @@ so the crawler needs one RPC call per window and no per-block lookups.
 
 Account-level data (any mapping from wallets to platform accounts, contact details or
 network metadata), investigation notes, and live incident records are kept out of this
-repository by design. `detect/mindset.json` and the excluded-address list are **salted
-hashes**; the salt is an Actions secret. `tests/test_pii.py` enforces this on every push.
+repository by design. So is **detector status**: open findings, tiers, fire counts,
+shadow signals, which hashes fired, and ack/enrichment state live only in
+`moca-ledger-private` (the state file, restored and saved by `notify/state_sync.py`).
+The salted-hash oracle the detector reads — class labels (`labels-lite.json`), the
+watchlist and the Mind set (`mindset.json`) — is restored from `moca-ledger-private:oracle/`
+at run time and is gitignored here; the salt is an Actions secret. Public Actions logs
+print number-free status lines only (`notify/privlog.py`, held by
+`tests/test_quiet_logs.py`). `tests/test_pii.py` enforces the tree, including handles
+and names, on every push.
 
 ## Running it
 
@@ -98,4 +105,8 @@ table; that fetch is best-effort on its side, so neither repo's CI can break the
 
 ## Status
 
-`heartbeat.json` carries the last successful run, block lag and detector health.
+`heartbeat.json` carries crawl run health only: `run_ts`, `crawl_ok`, `rows_total`,
+`ledger_last`, `lag_blocks`. Detector health (address-set age, open findings, fires,
+shadow list, override errors) is written to `detector_health` in the private state and
+read by the bot through `notify/health.py` — the daily proof of life, `/status`, the
+watchdog and the weekly check all still see it, in the private group.

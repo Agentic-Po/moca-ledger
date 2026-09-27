@@ -12,10 +12,16 @@ STATE = ROOT / "alerts" / "state.json"
 PEER  = "Agentic-Po/skill-payout-dashboard"
 DEDUP_H = 6
 
+try:                              # public Actions logs: no detector status
+    from privlog import private_print
+except ImportError:
+    sys.path.insert(1, str(ROOT))
+    from notify.privlog import private_print
+
 # The two degradation thresholds, named because notify/commands.py reads them too.
 # /status must never disclose a blind spot this watchdog has not already announced
 # to the same group, so there is one definition and the two cannot drift apart
-# (council §7 leaves gating read commands to Po; this adds no new read surface).
+# (council §7 leaves gating read commands to the operator; this adds no new read surface).
 MINDSET_STALE_H = 48
 LAG_BLOCKS_MAX  = 900
 
@@ -39,7 +45,7 @@ def send(text):
     sys.path.insert(0, str(ROOT))
     from notify.telegram import send as tg
     if not _may_send():
-        print(f"watchdog: NOT sending from a local run (use --force): {text[:60]!r}")
+        private_print(f"watchdog: NOT sending from a local run (use --force): {text[:60]!r}")
         return {"ok": True, "local": True}
     return tg(text)
 
@@ -55,7 +61,14 @@ def main():
     except Exception as e:
         alerts.append(("peer_unreachable", f"⏳ <b>peer repo unreachable</b>\n{str(e)[:90]}"))
     try:
-        hb = json.loads((ROOT / "heartbeat.json").read_text())
+        # run health is public (heartbeat.json); the mind-set age is private
+        # (state["detector_health"], see notify/health.py)
+        try:
+            from health import load as _health
+        except ImportError:
+            sys.path.insert(1, str(ROOT))
+            from notify.health import load as _health
+        hb = _health(s, root=ROOT)
         if (hb.get("mindset_age_h") or 0) > MINDSET_STALE_H:
             alerts.append(("mindset_stale", f"⏳ <b>address set stale</b>\n{hb.get('mindset_age_h')} h old — detectors fell back to {hb.get('mindset_source')}"))
         if (hb.get("lag_blocks") or 0) > LAG_BLOCKS_MAX:
@@ -73,11 +86,14 @@ def main():
             last[key] = now; fired += 1
         else:
             lost += 1
-            print(f"watchdog: {key} NOT delivered ({r.get('error')}) — not deduped, "
-                  f"it will be tried again next run", file=sys.stderr)
+            private_print(f"watchdog: {key} NOT delivered ({r.get('error')}) — not deduped, "
+                          f"it will be tried again next run", file=sys.stderr)
     s["watchdog"] = last
     STATE.write_text(json.dumps(s, indent=1))
-    print(f"watchdog: {len(alerts)} condition(s), {fired} sent" + (f", {lost} undelivered" if lost else ""))
+    # Which conditions hold (address set stale, ledger behind) is detector status:
+    # it goes to the group, never to the public Actions log.
+    private_print(f"watchdog: {len(alerts)} condition(s), {fired} sent" + (f", {lost} undelivered" if lost else ""),
+                  public="watchdog: ok" if not lost else "watchdog: an alert was NOT delivered")
     return 3 if lost else 0
 
 if __name__ == "__main__": sys.exit(main())

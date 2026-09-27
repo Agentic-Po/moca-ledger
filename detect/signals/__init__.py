@@ -130,8 +130,12 @@ def load_thresholds():
             # believes a shape is shadowed while it is paging, or believes a pager
             # is live while it is not.
             thr["thresholds_override_error"] = f"{type(ex).__name__}: {str(ex)[:120]}"
-            print("thresholds: THRESHOLDS_JSON ignored — " + thr["thresholds_override_error"],
-                  file=sys.stderr)
+            if ROOT not in sys.path:
+                sys.path.insert(1, ROOT)
+            from notify.privlog import private_print
+            private_print("thresholds: THRESHOLDS_JSON ignored — " + thr["thresholds_override_error"],
+                          public="thresholds: THRESHOLDS_JSON ignored (does not parse)",
+                          file=sys.stderr)
     return thr
 
 

@@ -10,6 +10,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      # Open findings are detector status and live only in the private state now
+      # (notify/health.py). Read-only pull; this job never pushes the state. A failed
+      # pull only costs the weekly message its open-findings line.
+      - name: Restore detector memory (private repo, read-only)
+        env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
+        run: python3 notify/state_sync.py pull || echo "state pull failed — weekly notice will omit open findings"
       - name: Stamp liveness and report the run gap
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
