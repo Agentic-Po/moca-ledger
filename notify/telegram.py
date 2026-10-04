@@ -641,6 +641,10 @@ def send_pending():
 
     # ---- anything the state layer dropped must be SAID, not only logged (§6.6)
     rn = s.get("retired_notice")
+    if rn and not rn.get('unacked'):
+        # Settled/automatic history retention is an audit fact, not an operator task.
+        s.pop('retired_notice',None);save_state(s)
+        rn = None
     if rn:
         s.pop("retired_notice", None); save_state(s)
         _log_out(send(f"⚠️ <b>{rn.get('unacked', 0)} unacknowledged case(s) were aged out of my memory.</b>\n"
