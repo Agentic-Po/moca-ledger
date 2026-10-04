@@ -89,6 +89,8 @@ def apply_results(state, receipts):
             continue
         if result.get('generation') != f.get('triage_generation'):
             continue
+        if int(f.get('triage_handled_generation') or 0) >= int(result.get('generation') or 0):
+            continue
         decision = result.get('decision')
         if decision not in {'observe', 'expected', 'pending_verification', 'exception'}:
             continue

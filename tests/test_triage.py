@@ -64,6 +64,15 @@ class TriageTests(unittest.TestCase):
         s={'open':{'case1':f}};triage.prepare(s,NOW);triage.prepare(s,NOW)
         self.assertEqual(f['triage_generation'],2)
 
+    def test_handled_group_and_late_receipt_cannot_reopen_review_queue(self):
+        f=case(triage_generation=1,delivery_route='private',needs_decision=True,tg_message_id=100)
+        other=case(id='case2',key='0x'+'b'*40,triage_generation=1,delivery_route='private',needs_decision=True,tg_message_id=100)
+        s={'triage_version':1,'open':{'case1':f,'case2':other}}
+        commands.set_status(s,'case1','reported','operator')
+        self.assertFalse(other['needs_decision']);self.assertEqual(other['status'],'reported')
+        triage.apply_results(s,{'case1':{'generation':1,'decision':'exception','retry':False}})
+        self.assertFalse(f['needs_decision'])
+
     def test_overdue_independent_warning_has_one_fallback(self):
         f=case(signal='S-X',tier='notify');s={'open':{'case1':f}}
         triage.prepare(s,NOW);self.assertFalse(f['pending_send'])

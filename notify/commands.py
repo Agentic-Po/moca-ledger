@@ -261,7 +261,7 @@ def set_status(s, ident, status, uid, note="", when=None, _group=True):
         f["ack_by"] = uid if (not prior or prior == SEED_ACK) else prior
         f["ack_ts"] = at.isoformat() if (not prior or prior == SEED_ACK) else f.get("ack_ts")
     if s.get('triage_version'):
-        f.update(needs_decision=False,needs_triage=False)
+        f.update(needs_decision=False,needs_triage=False,triage_handled_generation=f.get("triage_generation",0))
         if _group and f.get('tg_message_id'):
             for other in s.get('open', {}).values():
                 if other is not f and other.get('tg_message_id') == f['tg_message_id'] and other.get('delivery_route') == 'private':
