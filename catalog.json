@@ -14,7 +14,7 @@
    "from": "2026-07-06T09:17:13",
    "to": "2026-10-04T01:54:33"
   },
-  "generated_iso": "2026-10-04T01:57:00Z",
+  "generated_iso": "2026-10-04T04:45:34Z",
   "max_row_ts": "2026-10-04T01:54:33",
   "expected_cadence_minutes": 10,
   "update_cadence": "every crawl (10-minute cron)",
@@ -31,14 +31,14 @@
   "kind": "oracle",
   "row_schema": "public_addresses.json: infrastructure[], token_contracts{}, event_topics{}; allowlist.json; calendar.json: campaign windows",
   "rows": 66,
-  "rows_closed": 66,
-  "bytes": 4415,
+  "rows_closed": 55,
+  "bytes": 4446,
   "coverage": {
    "from": "2026-08-22T17:57:25",
-   "to": "2026-08-22T21:11:50"
+   "to": "2026-10-04T12:45:13"
   },
-  "generated_iso": "2026-10-04T01:57:00Z",
-  "max_row_ts": "2026-08-22T21:11:50",
+  "generated_iso": "2026-10-04T04:45:34Z",
+  "max_row_ts": "2026-10-04T12:45:13",
   "expected_cadence_minutes": null,
   "update_cadence": "hand-maintained; changes ride with a PR",
   "provenance": "public infrastructure identified off-chain (treasury, reward source, cognition sink, AMM pools) plus campaign windows",
@@ -60,7 +60,7 @@
    "from": "2026-10-04T01:57:00",
    "to": "2026-10-04T01:57:00"
   },
-  "generated_iso": "2026-10-04T01:57:00Z",
+  "generated_iso": "2026-10-04T04:45:34Z",
   "max_row_ts": "2026-10-04T01:57:00",
   "expected_cadence_minutes": 10,
   "update_cadence": "rewritten every crawl (10-minute cron)",

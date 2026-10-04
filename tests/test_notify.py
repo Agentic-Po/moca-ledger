@@ -309,6 +309,28 @@ def t_post():
     print("\nthe sender")
     real = telegram.urllib.request.urlopen
 
+    from notify.message_text import plain_handles
+    sample = "Ask <b>@sample_owner</b>; mail staff@example.com; domain @example.com"  # pii-ok: synthetic contacts
+    expected = "Ask <b>sample_owner</b>; mail staff@example.com; domain @example.com"  # pii-ok: synthetic contacts
+    check("contact handles are plain text while email domains survive",
+          plain_handles(sample) == expected)
+    requests = []
+
+    def capture(req, **kwargs):
+        requests.append(req.data)
+        return io.BytesIO(b'{"ok":true,"result":{"message_id":1}}')
+
+    telegram.urllib.request.urlopen = capture
+    try:
+        telegram._post("sendMessage", {"text": sample})
+        telegram._post("sendPhoto", {"caption": sample}, {"photo": ("test.png", b"test")})
+        commands.api("sendMessage", text=sample)
+    finally:
+        telegram.urllib.request.urlopen = real
+    check("alerts, photo captions and command replies cannot emit handle mentions",
+          len(requests) == 3 and all(b"sample_owner" in b and b"%40sample_owner" not in b
+                                    and b"@sample_owner" not in b for b in requests))  # pii-ok: synthetic handle
+
     def boom(*a, **k):
         raise urllib.error.HTTPError("u", 429, "Too Many Requests", {},
                                      io.BytesIO(b"<html>429 nginx</html>"))

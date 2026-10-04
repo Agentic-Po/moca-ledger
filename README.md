@@ -51,6 +51,9 @@ python3 tests/test_pii.py --tree .
 
 ## Who can change a case
 
+Outgoing alerts, photo captions and command replies display contact handles as plain
+text, without the mention prefix, to avoid extra Telegram mention notifications.
+
 The Telegram bot **informs; it never acts on the platform**. The only thing a person can
 change through it is a case's status (`reported` · `contained` · `watching` · `closed`),
 and that is restricted to the numeric Telegram user ids in the `TELEGRAM_ACK_USER_IDS`
@@ -110,3 +113,37 @@ table; that fetch is best-effort on its side, so neither repo's CI can break the
 shadow list, override errors) is written to `detector_health` in the private state and
 read by the bot through `notify/health.py` — the daily proof of life, `/status`, the
 watchdog and the weekly check all still see it, in the private group.
+
+
+## Current reward policy (2026-10-04)
+
+The resumed reward era began on 2026-09-14 at 14:19 UTC. Equip creators receive
+$0.05 (half of the $0.10 cost); invoke creators receive $0.005 (half of $0.01).
+Contemporary $1 payouts are system top-ups, not skill rewards. Historical $1
+and $0.10 rewards retain their original classification. The August reward
+pause ends at the restart rather than remaining active indefinitely.
+
+The size classifier keeps both $3 grant-sized and ambiguous $10 credit-sized
+transfers outside skill counters. A $10 new-user grant overlaps a purchased
+credit pack; size alone never verifies a purchase. The exact grant-policy
+cutover is not assumed, so historical grant amounts are not rewritten.
+
+The dollar unit remains an estimate from prior-day transfer samples, with
+current-era samples restricted to the system-top-up band; the older $3 grant
+and old invoke bands cannot teach today's reward unit. This is size inference,
+not a transaction-type oracle. If prices move beyond the sampling bands,
+classification can degrade and requires a separate rate-oracle improvement.
+
+Current skill rewards are checked together against $4 (80 equips, 800 invokes,
+or a mixture) using integer half-cent units. Notices concern completed UTC
+clock hours and explicitly request verification of the platform's cap window.
+A wallet total is a lower bound on its user's total; the detector cannot prove
+a combined multi-wallet user total without a private owner mapping. No notice
+claims that rolling-window or user-level enforcement has been verified.
+
+Legacy skill-volume heuristics remain active for historical incident replay.
+In the current cheaper-reward era they contribute digest context until their
+baselines are recalibrated; they do not label normal volume a cap failure.
+Obsolete current-era reward cases are retained as closed history and have
+pending sends cleared once when the new policy first runs. Independent flow,
+cash-out and other non-reward detectors remain active.

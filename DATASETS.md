@@ -20,7 +20,7 @@ Rows, bytes and coverage are measured off the files, never asserted.
 
 | Dataset | Path | Rows | Size | Coverage | Cadence |
 |---|---|---:|---:|---|---|
-| `labels` | `labels/` | 66 | 4.4 KB | 2026-08-22 → 2026-08-22 | hand-maintained; changes ride with a PR |
+| `labels` | `labels/` | 66 | 4.4 KB | 2026-08-22 → 2026-10-04 | hand-maintained; changes ride with a PR |
 
 **`labels`** — public_addresses.json: infrastructure[], token_contracts{}, event_topics{}; allowlist.json; calendar.json: campaign windows
 

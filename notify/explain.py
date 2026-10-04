@@ -132,10 +132,17 @@ SIGNALS = {
         "do": "Note where the funds are going. If several accounts forward to the same address, that connection is the thing worth checking — this alert does not say whose address it is.",
         "normal": "A genuine new user spends the quest reward on the platform instead of passing it on.",
     },
+    "CAP": {
+        "title": "Skill-sized rewards exceed the hourly amount on one wallet",
+        "what": "Combined equip- and invoke-sized transfers exceeded $4 in a completed UTC clock hour.",
+        "why": "Creator payouts are $0.05 per equip and $0.005 per invoke. A wallet is a lower bound on a user's total; payout purpose and the backend hour definition still need verification.",
+        "do": "Confirm the recorded payment types, user mapping and backend cap window before requesting a reward pause.",
+        "normal": "80 equips, 800 invokes, or an equivalent mixture total $4. A $1 top-up or $10 credit delivery is outside this counter.",
+    },
     "S-F": {
         "title": "A reward payout happened while rewards are supposed to be paused",
         "what": "A payout the size of an equip or invoke reward went out after rewards were paused.",
-        "why": "Equip and invoke rewards were paused on 21 Aug. A payout in that shape means either the pause has a gap, or this is a different kind of payment that looks similar on-chain.",
+        "why": "A reward-sized payout occurred inside a configured pause window. The August pause ended when the current reward era resumed; $1 top-ups are not current skill rewards.",
         "do": "Ask the platform team to confirm what this payment actually was before assuming the pause failed.",
         "normal": "While the pause holds, nothing of this size should be leaving the Treasury at all.",
     },

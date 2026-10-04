@@ -159,7 +159,7 @@ def _seed_state():
             f.update(pending_send=True, last_sent=None, tier="page", ts=now - 60,
                      first_ts=time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(now - 60)))
         open_[f["id"]] = f
-    return {"open": open_, "telegram_offset": 0, "version": 1,
+    return {"open": open_, "telegram_offset": 0, "version": 1, "reward_policy_version": 2,
             "retired_notice": {"total": 4, "unacked": 2},
             "detector_health": {"mindset_age_h": 70.0, "mindset_source": "hashed-stale",
                                 "open_findings": {"page": 9, "notify": 9, "digest": 9},

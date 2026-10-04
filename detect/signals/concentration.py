@@ -8,6 +8,7 @@ Tiers:
 """
 import collections
 from . import register, Finding, SLOT, H, utc
+from reward_policy import RESUMED
 
 
 @register("concentration", order=10)
@@ -73,7 +74,7 @@ def run(ctx):
                                      organic_p95=organic_top1_p95, window="6h", ts=sl * SLOT,
                                      detail=f"top1={sh1:.0%} n={nn}"))
         for t, k in c1.items():
-            if k > T["conc_per_creator_hour"]:
+            if sl * SLOT < RESUMED and k > T["conc_per_creator_hour"]:
                 fires.append(Finding("10", t, "page", k, T["conc_per_creator_hour"], window="60min", ts=sl * SLOT,
                                      headline=[f"{k} equip-sized payouts to one creator in 60 min"],
                                      detail=f"{k}/60min"))
