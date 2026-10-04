@@ -51,6 +51,9 @@ python3 tests/test_pii.py --tree .
 
 ## Who can change a case
 
+Outgoing alerts, photo captions and command replies display contact handles as plain
+text, without the mention prefix, to avoid extra Telegram mention notifications.
+
 The Telegram bot **informs; it never acts on the platform**. The only thing a person can
 change through it is a case's status (`reported` · `contained` · `watching` · `closed`),
 and that is restricted to the numeric Telegram user ids in the `TELEGRAM_ACK_USER_IDS`

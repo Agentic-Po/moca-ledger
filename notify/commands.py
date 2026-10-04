@@ -42,6 +42,11 @@ CHAT = lambda: _cfg("TELEGRAM_CHAT_ID",   "telegram_chat_id")
 ACK  = lambda: {x.strip() for x in (_cfg("TELEGRAM_ACK_USER_IDS", "telegram_ack_user_ids") or "").replace(",", " ").split() if x.strip()}
 
 def api(method, **params):
+    try:
+        from notify.message_text import outbound_fields
+    except ImportError:
+        from message_text import outbound_fields
+    params = outbound_fields(params)
     req = urllib.request.Request(f"https://api.telegram.org/bot{TOK()}/{method}",
                                  data=urllib.parse.urlencode(params).encode())
     try:    return json.load(urllib.request.urlopen(req, timeout=30))

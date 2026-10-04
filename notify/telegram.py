@@ -22,6 +22,11 @@ def _read(name):
     return p.read_text().strip() if p.exists() else ""
 
 def _post(method, data=None, files=None):
+    try:
+        from notify.message_text import outbound_fields
+    except ImportError:
+        from message_text import outbound_fields
+    data = outbound_fields(data)
     url = API.format(tok=TOK(), m=method)
     if files:
         boundary = "----mocaledger%d" % time.time_ns()
