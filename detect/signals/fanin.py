@@ -66,6 +66,7 @@ def run(ctx):
                                          detail=f"{len(senders)} senders / {moca:,.0f} MOCA / 24h"
                                                 + (" [esc]" if esc else ""),
                                          escalation="fanin-esc" if esc else "",
+                                         entities=[r] + sorted(senders - {r})[:3],
                                          evidence=[(utc(x[0]), x[1][:14], round(x[2], 1)) for x in w[-40:]]))
 
     sweep(fanin_mind, "4b", True)

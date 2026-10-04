@@ -477,6 +477,11 @@ def one_pass(a):
         try:
             import balance_watch
             for f in balance_watch.poll(root=ROOT, thresholds=ctx.thr, quiet=a.quiet):
+                destination = _wallet(f.key)
+                related = sorted({sender for ts, sender, to, amount, tx, block in ctx.rows
+                                  if to == destination and ts >= ctx.t1 - S.DAY and ctx.is_mind(sender, ts)})
+                f.entities = related[:3]
+                f._state['entities'] = f.entities
                 ctx.fires.setdefault(f.signal, []).append(f)
                 findings[f.id] = f
         except Exception as e:  # fail-soft: the ledger signals must still land
