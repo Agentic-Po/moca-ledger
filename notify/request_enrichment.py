@@ -37,6 +37,10 @@ def dispatch(finding_id, pat, target=TARGET):
 
 
 def pending(state):
+    if state.get("triage_version"):
+        return [f for f in (state.get("open") or {}).values()
+                if f.get("needs_triage") and not f.get("triage_requested")
+                and f.get("status") not in ("closed", "archived") and f.get("id")]
     return [f for f in (state.get("open") or {}).values()
             if f.get("tier") in ("page", "notify") and not f.get("pending_send")
             and f.get("ack_by") != "go-live-seed" and not f.get("enrich_requested") and f.get("id")]
@@ -53,10 +57,16 @@ def main():
                       public="enrichment: no PAT — the private side polls hourly")
         return 0
     sent, failed = 0, 0
-    for f in todo[:10]:
-        ok, detail = dispatch(f["id"], pat)
+    batch = todo if s.get("triage_version") else todo[:10]
+    for f in (batch[:1] if s.get("triage_version") else batch):
+        ok, detail = dispatch("" if s.get("triage_version") else f["id"], pat)
         if ok:
-            f["enrich_requested"] = True; sent += 1
+            if s.get("triage_version"):
+                for candidate in batch:
+                    candidate["triage_requested"] = True
+                sent += len(batch)
+            else:
+                f["enrich_requested"] = True; sent += 1
         else:
             failed += 1
             private_print(f"enrichment: dispatch failed for {f['id']} ({detail})")

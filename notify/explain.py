@@ -210,7 +210,7 @@ REPLY_LINE = "<b>Reply to this message with:</b>  contained · reported · watch
 
 # The digest's shadow heading, as a constant so a test asserts the exact words the
 # reader sees rather than a paraphrase of them.
-SHADOW_HEADING = "🔭 <b>In shadow — recorded, deliberately not paging</b>"
+SHADOW_HEADING = "🔭 <b>Patterns recorded automatically</b>"
 
 # HEDGE (defined with the money helpers below) is the one wording every payout
 # and money line in this channel uses.
@@ -293,6 +293,13 @@ def _as_of(f):
 # own headline sentence, then to the raw detail. No builder prints the threshold.
 
 def _m_conc(f):                                   # 10 / 10i / 10n
+    metrics = f.get("metrics") or {}
+    n = metrics.get("population_equips")
+    scope = metrics.get("share_scope", 1)
+    k = metrics.get("top3_equips" if scope == 3 else "top1_equips")
+    if n and k is not None:
+        who = "the top three creator wallets" if scope == 3 else "this creator wallet"
+        return f"{k:,} of {n:,} equip-sized payments ({k/n:.1%}) went to {who} in {_window(f)}. Concentration alone does not establish abuse or a cap breach."
     d = str(f.get("detail") or "")
     m = re.search(r"top(1|3)=(\d+)%\s*n=(\d+)", d)
     if m:
@@ -300,7 +307,7 @@ def _m_conc(f):                                   # 10 / 10i / 10n
         k = int(round(n * pct / 100.0))
         who = "this one creator wallet" if which == "1" else "the top three creator wallets between them"
         scope = " (our own creator wallets counted in)" if str(f.get("signal", "")).lstrip("#") == "10i" else ""
-        return f"Of {n:,} reward payouts in {_window(f)}, {k:,} — {pct}% — went to {who}{scope}."
+        return f"Of {n:,} equip-sized payouts in {_window(f)}, {k:,} — {pct}% — went to {who}{scope}."
     m = re.fullmatch(r"(\d+)/60min", d.strip())
     k = int(m.group(1)) if m else _int(f.get("value"))
     if k is not None and str(f.get("window") or "") == "60min":
@@ -892,7 +899,7 @@ DIGEST_LINE = {
 
 def _digest_block(items, sig):
     """One signal's lines inside the digest."""
-    title, tmpl = DIGEST_LINE.get(sig, (SIGNALS.get(sig, FALLBACK)["title"], "{n} event(s)"))
+    title, tmpl = DIGEST_LINE.get(sig, (SIGNALS.get(sig, FALLBACK)["title"], "{n} finding(s)"))
     out = [f"<b>{title}</b>", f"   {tmpl.format(n=len(items))}"]
     # "one of them", not "the largest": measured() renders a different quantity per
     # signal, so a superlative label would be a claim this line cannot back. Ranked on
@@ -933,48 +940,15 @@ def _extremity(f):
 
 
 def digest(findings):
-    """One silent, readable summary instead of a list of codes.
-
-    Findings held in shadow are separated out and named. They DID cross a level
-    that would otherwise alert, so the standing line below — "nothing here crossed
-    a level that asks for a decision" — would be a false all-clear printed over
-    them (§6.3, §6.6). Being a new and unmeasured check is a reason not to wake
-    someone; it is never a reason not to say the thing happened.
-    """
+    """Optional observation summary; production triage keeps routine observations private."""
     import collections
-    shadow = [f for f in findings if f.get("shadow_of")]
-    plain = [f for f in findings if not f.get("shadow_of")]
-    lines = ["📋 <b>For the record</b>", ""]
-    if shadow:
-        by = collections.OrderedDict()
-        for f in shadow:
-            by.setdefault(str(f.get("signal", "")).lstrip("#"), []).append(f)
-        lines += [SHADOW_HEADING,
-                  "<i>These crossed a level that would normally alert. They are new checks "
-                  "whose normal range has not been measured on live traffic yet, so they are "
-                  "written down instead of waking anyone. That is a decision about the check, "
-                  "not a judgement that the activity is harmless — it is not an all-clear.</i>",
-                  ""]
-        for sig, items in by.items():
-            would = str(items[0].get("shadow_of") or "alert")
-            lines += _digest_block(items, sig)[:2]
-            lines.append(f"   would have been a <b>{would}</b> if this check were live")
-            biggest = max(items, key=_extremity)
-            if biggest.get("detail"):
-                lines.append(f"   one of them: {measured(biggest)}")
-            lines.append("")
-    if plain:
-        groups = collections.OrderedDict()
-        for f in plain:
-            groups.setdefault(str(f.get("signal", "")).lstrip("#"), []).append(f)
-        # "The rest of this list" is only true when a shadow block precedes it. On the
-        # ordinary day — nothing in shadow, which is most days — it opened the most-read
-        # message in the channel with a clause referring to nothing above it.
-        opener = ("The rest of this list crossed no level" if shadow
-                  else "Nothing here crossed a level")
-        lines += [f"<i>{opener} that asks for a decision today. "
-                  "These are counts, not clearances.</i>", ""]
-        for sig, items in groups.items():
-            lines += _digest_block(items, sig)
-    lines.append("<i>/cases shows everything still waiting on a person.</i>")
+    lines = ["📋 <b>Recorded observations</b>", ""]
+    if any(f.get("shadow_of") for f in findings):
+        lines += [SHADOW_HEADING, "<i>Historical pattern thresholds; payment verification decides whether attention is needed.</i>", ""]
+    groups = collections.OrderedDict()
+    for f in findings:
+        groups.setdefault(str(f.get("signal", "")).lstrip("#"), []).append(f)
+    for sig, items in groups.items():
+        lines += _digest_block(items, sig)
+    lines.append("<i>Recorded automatically. No manual review requested for these observations.</i>")
     return "\n".join(lines)

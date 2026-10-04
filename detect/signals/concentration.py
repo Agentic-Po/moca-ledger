@@ -50,6 +50,7 @@ def run(ctx):
             top, k = c6i.most_common(1)[0]
             if k / ni >= T["conc_top1_internal_digest"]:
                 fires.append(Finding("10i", top, "digest", round(k / ni, 3), T["conc_top1_internal_digest"],
+                                     metrics={"population_equips":ni, "top1_equips":k, "share_scope":1},
                                      window="6h", ts=sl * SLOT, detail=f"top1={k/ni:.0%} n={ni} (all creators)"))
         nn = sum(c6.values())
         if nn >= T["conc_min_n_page"]:
@@ -62,16 +63,21 @@ def run(ctx):
                 which = f"top1={sh1:.0%}" if sh1 >= T["conc_top1_page"] else f"top3={sh3:.0%}"
                 esc = "confirmed-n100" if nn >= T["conc_min_n_confirm"] else ""
                 fires.append(Finding("10", top, "page", round(sh1, 3), T["conc_top1_page"],
-                                     organic_p95=organic_top1_p95, window="6h", ts=sl * SLOT,
+                                     organic_p95=organic_top1_p95 if sl * SLOT < RESUMED else None, window="6h", ts=sl * SLOT,
                                      headline=[f"{which} of {nn} equip-sized payouts / 6 h",
                                                f"top-1 count {mc[0][1]}",
                                                f"n gate {'confirmed (n>=100)' if esc else 'n>=50'}"],
+                                     metrics={"population_equips": nn, "top1_equips": mc[0][1],
+                                              "top3_equips": sum(k for _, k in mc),
+                                              "share_scope": 1 if sh1 >= T["conc_top1_page"] else 3,
+                                              "window_start": end-win_s, "window_end": min(end,ctx.t1)},
                                      detail=f"{which} n={nn}", escalation=esc,
                                      evidence=[(utc(ets), ew[:14]) for ets, ew in list(w6)[-40:]]))
                 paged = True
             if sh1 >= T["conc_top1_notify"] and not paged:
                 fires.append(Finding("10n", top, "notify", round(sh1, 3), T["conc_top1_notify"],
-                                     organic_p95=organic_top1_p95, window="6h", ts=sl * SLOT,
+                                     organic_p95=organic_top1_p95 if sl * SLOT < RESUMED else None, window="6h", ts=sl * SLOT,
+                                     metrics={"population_equips":nn, "top1_equips":mc[0][1], "share_scope":1},
                                      detail=f"top1={sh1:.0%} n={nn}"))
         for t, k in c1.items():
             if sl * SLOT < RESUMED and k > T["conc_per_creator_hour"]:

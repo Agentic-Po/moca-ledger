@@ -147,3 +147,6 @@ baselines are recalibrated; they do not label normal volume a cap failure.
 Obsolete current-era reward cases are retained as closed history and have
 pending sends cleared once when the new policy first runs. Independent flow,
 cash-out and other non-reward detectors remain active.
+
+
+Wallet notification delivery is handed to the private companion pipeline for fixed read-only verification before publication to the internal Telegram channel. Public runners receive only case-generation decisions and message IDs, never identity or skill-catalogue results. Routine observations are recorded automatically; inactive episodes leave the decision queue and fresh qualifying episodes can reopen automatic archives. Existing platform-health and independent-flow warning paths remain available. Dispatch is batched on the existing workflow; there is no new schedule or local-machine runtime requirement.

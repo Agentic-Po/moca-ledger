@@ -73,6 +73,6 @@ def run(ctx):
                                  headline=[f"{len(sids)} distinct signals on linked entities within 6 h: "
                                            + ", ".join(sorted(sids)),
                                            f"{len(ents)} linked entities"],
-                                 detail=", ".join(sorted(sids)),
+                                 detail=", ".join(sorted(sids)), entities=sorted(ents)[:4],
                                  evidence=[(s, e[:14]) for s, e in sorted(group)]))
     return fires

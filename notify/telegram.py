@@ -599,6 +599,12 @@ def _incident_header(loud, batch, inc, arrivals, arrivals_prev, held_prev, doubl
 def send_pending():
     """Send findings marked pending in alerts/state.json (written by detect/run.py)."""
     s = load_state()
+    if s.get("triage_version"):
+        try:
+            from triage import prepare
+        except ImportError:
+            from notify.triage import prepare
+        prepare(s, time.time())
     for f in s.get("open", {}).values():
         if not f.get("pending_send"):
             continue
@@ -696,6 +702,8 @@ def send_pending():
         f["alert_seq"] = _alert_seq(s, f)                   # footer: "6th alert on this wallet"
         save_state(s)                                       # commit intent BEFORE sending
         body = render(f)
+        if f.get('delivery_route') == 'fallback':
+            body += "\n⏳ <i>Private verification is overdue. Sending the independent on-chain warning now; Mind/owner email and skill details will follow when access recovers.</i>"
         if reason:
             body += f"\n<i>🔔 Sounding despite incident mode: {reason}.</i>"
         elif silent:
@@ -706,6 +714,8 @@ def send_pending():
         r = send(body, photo=_chart_for(f), silent=silent)
         f["send_ok"] = bool(r.get("ok")); f["send_error"] = None if r.get("ok") else str(r.get("error"))[:80]
         if r.get("ok"):
+            if f.get('delivery_route') == 'fallback':
+                f['fallback_sent'] = True
             # What the reader was actually looking at, and when. A person replies to
             # an ALERT, not to the state file, and their reply is read up to an hour
             # later; stamping the baseline from the value at poll time folded the

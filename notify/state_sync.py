@@ -55,7 +55,7 @@ LIVE_STATUS = ("contained", "reported", "watching")
 def _settled(f):
     if f.get("status") in LIVE_STATUS:
         return False
-    return bool(f.get("status") == "closed" or f.get("ack_by") or f.get("ack_role"))
+    return bool(f.get("status") in ("closed", "archived") or f.get("ack_by") or f.get("ack_role"))
 
 
 def _size(state):
@@ -154,6 +154,34 @@ def pull():
     except Exception as e:
         private_print(f"state: PULL FAILED ({type(e).__name__}) — refusing to run stateless",
                       public=f"state: PULL FAILED ({type(e).__name__}) — refusing to run stateless"); return False
+
+
+def pull_triage():
+    """Merge identity-free decisions; private enrichment remains the sole writer."""
+    if not _pat():
+        return True
+    try:
+        d = _req("GET", api=f"https://api.github.com/repos/{REPO}/contents/state/triage-results.json")
+        raw = base64.b64decode(d["content"]) if d.get("content") else urllib.request.urlopen(
+            urllib.request.Request(d["download_url"], headers={"Authorization": f"Bearer {_pat()}"}), timeout=30).read()
+        receipts = json.loads(raw)
+        try:
+            from triage import apply_results
+        except ImportError:
+            from notify.triage import apply_results
+        state = json.loads(STATE.read_text())
+        apply_results(state, receipts)
+        STATE.write_text(json.dumps(state, indent=1))
+        private_print("triage: restored", public="triage: restored")
+        return True
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return True  # Initial deployment; there are no results yet.
+        private_print("triage: restore failed", public="triage: restore failed")
+        return False
+    except Exception:
+        private_print("triage: restore failed", public="triage: restore failed")
+        return False
 
 
 # ---------------------------------------------------------------- the detector oracle
@@ -341,5 +369,5 @@ def push():
 
 if __name__ == "__main__":
     arg = sys.argv[1:]
-    ok = pull() if arg == ["pull"] else pull_oracle() if arg == ["pull-oracle"] else push()
+    ok = pull() if arg == ["pull"] else pull_oracle() if arg == ["pull-oracle"] else pull_triage() if arg == ["pull-triage"] else push()
     sys.exit(0 if ok else 1)
