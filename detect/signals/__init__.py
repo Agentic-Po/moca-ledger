@@ -21,6 +21,7 @@ import statistics
 import sys
 import datetime as dt
 from dataclasses import dataclass, field, asdict
+from reward_policy import band as payout_band, RESUMED
 
 SLOT = 600
 H = 3600
@@ -335,6 +336,10 @@ class Ctx:
         for ts, f, t, v, tx, b in self.rows:
             if f != TREASURY:
                 continue
+            if ts >= RESUMED:
+                if 90 <= v <= 175:
+                    samples[day_str(ts)].append(v)
+                continue
             if 9 <= v <= 17:
                 samples[day_str(ts)].append(v * 10)
             elif 90 <= v <= 175:
@@ -367,24 +372,22 @@ class Ctx:
         u = self.unit(ts)
         if not u:
             return "other"
-        r = v / u
-        if 0.07 <= r <= 0.16:
-            return "invoke"
-        if 0.8 <= r <= 1.25:
-            return "equip"
-        if 2.5 <= r <= 3.6:
-            return "airdrop"
-        return "other"
+        return payout_band(v, ts, u)
 
 
 # ---------------------------------------------------------------- evaluate + reduce
 def evaluate(ctx):
     """Run every registered signal in order; composite (order 90) sees earlier fires."""
     # import all signal modules so they register (idempotent)
-    from . import concentration, burst, invoke, worker, fanin, slow_harvest, cluster, watchlist, quest, velocity, pause, exit_score, outflow, composite  # noqa: F401
+    from . import concentration, burst, invoke, worker, fanin, slow_harvest, cluster, watchlist, quest, velocity, pause, exit_score, outflow, composite, reward_cap  # noqa: F401
     for order, name, fn in sorted(REGISTRY, key=lambda x: x[0]):
         fires = fn(ctx) or []
         for f in fires:
+            if f.ts >= RESUMED and f.signal in {"10", "10n", "10i", "11", "INV-10", "INV-11", "S-A", "EV", "S-B"}:
+                f.shadow_of = f.tier
+                f.tier = "digest"
+                f.recommended_action = "context only; current reward-volume baseline requires calibration"
+                f.headline.append("Current-era volume context only; this is not a cap breach")
             f.as_of_block = ctx.as_of_block
             if not f.recommended_action:
                 f.recommended_action = ACTION.get(f.tier, "")

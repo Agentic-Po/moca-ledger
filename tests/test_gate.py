@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.join(ROOT, "detect"))
 sys.path.insert(1, ROOT)
 from notify.privlog import private_print  # noqa: E402
 
+from reward_policy import RESUMED
 from signals import Ctx, evaluate, shadow_signals, shadow_tier, ts_of, utc, day_str, _pct  # noqa: E402
 from signals.composite import MEMBERS as COMPOSITE_MEMBERS  # noqa: E402
 from signals import slow_harvest  # noqa: E402  (G5 re-runs this one signal on its own)
@@ -109,7 +110,7 @@ def main():
     import statistics as _st
     _daily = {}
     for _ts, _t, _v, _bd, _tx in ctx.equips:
-        if not ctx.is_internal(_t):
+        if _ts < RESUMED and not ctx.is_internal(_t):
             _daily[day_str(_ts)] = _daily.get(day_str(_ts), 0) + 1
     _days = sorted(_daily)
     _win = sorted(_daily[d] for d in _days[-28:])
@@ -120,6 +121,10 @@ def main():
     check("G7 EV's FORWARD page bar is not loosened by the incident it is meant to catch",
           _bar <= 3 * _organic_max,
           f"bar {_bar} vs {_organic_max} on the busiest organic day ({_bar/max(_organic_max,1):.1f}x)")
+
+    check("G7 current-era uncalibrated reward volume cannot page",
+          all(f.tier == "digest" for sid in ("10", "10n", "11", "S-A", "EV", "S-B")
+              for f in ctx.fires.get(sid, []) if f.ts >= RESUMED))
 
     # ---- G5 nothing outside the data may set S-A's bar.
     # labels-lite.json is read by exactly one line of detector code — the organic

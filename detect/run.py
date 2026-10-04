@@ -71,7 +71,8 @@ def current_findings(ctx):
             # write_incident() renders from the Finding, so demoting only the state
             # copy would leave incidents/<...>/finding.json claiming "page" for a
             # finding the channel handled as a digest line.
-            f.tier, f.shadow_of = S.shadow_tier(ctx.thr, f.signal, f.tier)
+            f.tier, shadow_of = S.shadow_tier(ctx.thr, f.signal, f.tier)
+            f.shadow_of = shadow_of or f.shadow_of
             prev = out.get(f.id)
             if prev is None or f.ts >= prev.ts:
                 d = f.to_state()
@@ -99,6 +100,25 @@ def _wallet(key):
     if k.startswith("exit:"):
         k = k[5:]
     return k if k.startswith("0x") and len(k) == 42 else None
+
+
+def retire_obsolete_reward_cases(state):
+    """Retain obsolete case history, but stop sending/enriching policy false alarms."""
+    if state.get("reward_policy_version") == 2:
+        return
+    legacy = {"S-F", "10", "10n", "10i", "11", "INV-10", "INV-11", "S-A", "EV", "S-B"}
+    for case in state.get("open", {}).values():
+        ts = case.get("ts") or 0
+        obsolete = case.get("signal") in legacy
+        if case.get("signal") == "composite":
+            obsolete = bool(set(str(case.get("detail") or "").split(", ")) & legacy)
+        if obsolete and ts >= S.RESUMED:
+            case["pending_send"] = False
+            case["tier"] = "digest"
+            case["status"] = "closed"
+            case["status_note"] = "superseded by current reward policy; historical evidence retained"
+            case["status_by"] = "reward-policy-v2"
+    state["reward_policy_version"] = 2
 
 
 def paid_index(ctx):
@@ -456,6 +476,7 @@ def one_pass(a):
             private_print(f"price: soft-fail ({type(e).__name__})",
                           public=f"price: soft-fail ({type(e).__name__})")
     state = load_state()
+    retire_obsolete_reward_cases(state)
     new, escalated = diff_state(state, findings, ctx)
     n_inc = 0
     if not a.dry_run:

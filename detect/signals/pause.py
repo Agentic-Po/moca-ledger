@@ -5,7 +5,7 @@ After calendar pause start + 30 min grace, while the pause has no end set:
   PAGE   1 payout to a recipient that had equip-sized receipts before the pause
   NOTIFY 1-2 payouts to first-ever recipients — "verify type: a $1 card payment
          has the same on-chain size" (type_verified is a private-layer upgrade)
-Auto-disables when the calendar event has an end timestamp.
+Auto-disables after the calendar event end; bounded future pauses still work.
 """
 import collections
 from . import register, Finding, SLOT, H, utc
@@ -16,7 +16,7 @@ def run(ctx):
     T = ctx.thr
     fires = []
     grace = T["pause_grace_min"] * 60
-    active = [c for c in ctx.pauses if c["e"] >= 4102444800]   # no end set -> still active
+    active = [c for c in ctx.pauses if c["e"] > ctx.t1]   # only a currently active pause
     if not active:
         return []
     start = min(c["s"] for c in active)
@@ -27,7 +27,7 @@ def run(ctx):
     events = []   # (ts, recipient, band, value, first_ever, prior)
     seen_before = set(t for ts, t, v, bd, tx in ctx.pay if ts < start)
     for ts, t, v, bd, tx in ctx.pay:
-        if bd not in ("equip", "invoke") or ts < start + grace:
+        if bd not in ("equip", "invoke") or ts < start + grace or not ctx.in_pause(ts):
             continue
         events.append((ts, t, bd, v, t not in seen_before, t in prior_recips))
     win = collections.deque()

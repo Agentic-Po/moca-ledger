@@ -16,6 +16,8 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -q -r requirements.txt
+      - name: Reward policy regression
+        run: python3 tests/test_reward_policy.py
       - name: PII gate
         run: python3 tests/test_pii.py --tree .
       # The detector gate evaluates the real oracle, which is private now. Read-only,

@@ -24,7 +24,7 @@ def run(ctx):
             seen.add(t)
             per_slot[ts // SLOT][bd] += 1
             per_slot[ts // SLOT]["all"] += 1
-    for bd in ("all", "equip", "airdrop", "other"):
+    for bd in ("all", "equip", "airdrop", "system_topup", "credit10", "other"):
         hist = []
         win = collections.deque()
         cur = 0
