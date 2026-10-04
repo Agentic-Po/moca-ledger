@@ -85,6 +85,8 @@ class Finding:
     view_png: str = None
     detail: str = ""
     escalation: str = ""        # e.g. "confirmed-n100", "tier-up"
+    metrics: dict = field(default_factory=dict)
+    entities: list = field(default_factory=list)
     shadow_of: str = ""         # the tier this WOULD have had if it were not in shadow
 
     @property

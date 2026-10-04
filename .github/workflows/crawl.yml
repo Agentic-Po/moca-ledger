@@ -49,6 +49,10 @@ jobs:
       # Same rule, same token, read-only: the salted-hash oracle (labels-lite,
       # watchlist, mindset) lives in moca-ledger-private:oracle/ and is gitignored
       # here. Missing it silently changes what the detector sees, so it stops the job.
+      - name: Restore automatic triage decisions
+        env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
+        run: python3 notify/state_sync.py pull-triage
+
       - name: Restore detector oracle (private repo)
         env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
         run: python3 notify/state_sync.py pull-oracle

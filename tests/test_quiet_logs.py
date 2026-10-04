@@ -156,7 +156,7 @@ def _seed_state():
              "type_verified": False, "detail": "synthetic", "headline": ["synthetic"],
              "pending_send": False, "last_sent": "2026-08-01T00:00:00+00:00", "filler": "x" * 900}
         if i < 6:                                # loud and pending: incident mode + header
-            f.update(pending_send=True, last_sent=None, tier="page", ts=now - 60,
+            f.update(key=f"platform:synthetic-{i}", signal="15", pending_send=True, last_sent=None, tier="page", ts=now - 60,
                      first_ts=time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(now - 60)))
         open_[f["id"]] = f
     return {"open": open_, "telegram_offset": 0, "version": 1, "reward_policy_version": 2,
@@ -193,6 +193,7 @@ def _tree():
 # crawl.yml's order, then weekly.yml. (argv, extra env)
 STEPS = [
     (["notify/state_sync.py", "pull"], {}),
+    (["notify/state_sync.py", "pull-triage"], {}),
     (["notify/state_sync.py", "pull-oracle"], {}),
     (["detect/run.py", "--quiet"], {}),
     (["notify/msglog.py", "pull"], {}),
@@ -293,7 +294,7 @@ def main():
     local, _, tree = run_pipeline(actions=False)
     shutil.rmtree(tree.parent, ignore_errors=True)
     check("self-test: locally the full detail still prints",
-          all(s in local for s in ("detect: rows=", "state: pulled", "UNACKNOWLEDGED",
+          all(s in local for s in ("detect: rows=", "state: pulled", "state: retired",
                                    "incident: header", "shadow: ", "watchdog: ",
                                    "enrichment: dispatch failed for", "commands: ")),
           local[-400:])

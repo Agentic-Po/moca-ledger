@@ -195,6 +195,21 @@ def diff_state(state, findings, ctx, fresh_h=24):
         d["mindset_source"] = ctx.mindset_source
         d["unit_source"] = ctx.unit_source.get(S.day_str(f.ts), "frozen")
         d["type_verified"] = False
+        end = min(ctx.t1, f.ts + S.SLOT)
+        if f.signal == "CAP":
+            end = f.ts
+            start = end - S.H
+        else:
+            import re
+            match = re.fullmatch(r"(\d+)(h|min)", f.window or "")
+            seconds = int(match[1]) * (S.H if match[2] == "h" else 60) if match else 6 * S.H
+            start = end - min(seconds, S.DAY)
+        d["verification_start"], d["verification_end"] = start, end
+        if f.signal == "CAP":
+            txs = sorted({tx.lower() for ts, recipient, amount, kind, tx in ctx.pay
+                          if recipient == f.key and start <= ts < end and kind in ("equip", "invoke")})
+            d["verification_txs"] = txs[:1024]
+            d["verification_txs_complete"] = len(txs) <= 1024
         # Who runs the bot, NOT who can pause a payout. Those were one field until
         # 2026-08-23, so a page read "Who to ask  <operator> (interim)" — the alert telling the
         # operator to ask the operator. The kill switch is read at send time from thresholds.kill_switch by
@@ -216,6 +231,9 @@ def diff_state(state, findings, ctx, fresh_h=24):
                 and cur.get("ack_by") == SEED_ACK and not cur.get("status")):
             state["open"].pop(fid, None)
             cur = None
+        if cur is not None:
+            from notify.triage import reopen
+            reopen(cur, d, ctx.t1)
         d["first_ts"] = _onset(d, cur)
         _apply_money(d, d, idx, ctx)
         if cur is None:
@@ -284,6 +302,8 @@ def diff_state(state, findings, ctx, fresh_h=24):
                 escalated.append(f)
                 escalated.append(f)
             state["open"][fid] = cur
+    from notify.triage import prepare
+    prepare(state, ctx.t1)
     return new, escalated
 
 
@@ -457,6 +477,11 @@ def one_pass(a):
         try:
             import balance_watch
             for f in balance_watch.poll(root=ROOT, thresholds=ctx.thr, quiet=a.quiet):
+                destination = _wallet(f.key)
+                related = sorted({sender for ts, sender, to, amount, tx, block in ctx.rows
+                                  if to == destination and ts >= ctx.t1 - S.DAY and ctx.is_mind(sender, ts)})
+                f.entities = related[:3]
+                f._state['entities'] = f.entities
                 ctx.fires.setdefault(f.signal, []).append(f)
                 findings[f.id] = f
         except Exception as e:  # fail-soft: the ledger signals must still land

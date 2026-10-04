@@ -243,7 +243,7 @@ def _value_as_of(f, at):
     return f.get("value")
 
 
-def set_status(s, ident, status, uid, note="", when=None):
+def set_status(s, ident, status, uid, note="", when=None, _group=True):
     k, f = find(s, ident)
     if not f: return None, None
     at = _sent_at(when)
@@ -260,6 +260,12 @@ def set_status(s, ident, status, uid, note="", when=None):
         prior = f.get("ack_by")
         f["ack_by"] = uid if (not prior or prior == SEED_ACK) else prior
         f["ack_ts"] = at.isoformat() if (not prior or prior == SEED_ACK) else f.get("ack_ts")
+    if s.get('triage_version'):
+        f.update(needs_decision=False,needs_triage=False,triage_handled_generation=f.get("triage_generation",0))
+        if _group and f.get('tg_message_id'):
+            for other in s.get('open', {}).values():
+                if other is not f and other.get('tg_message_id') == f['tg_message_id'] and other.get('delivery_route') == 'private':
+                    set_status(s, other.get('id'), status, uid, note, when, _group=False)
     return k, f
 
 
@@ -308,10 +314,17 @@ def cases_text(s):
     # `backfill` is the detector's own word for "recorded, never sent, older than the
     # freshness window" — the August incident. It is history, not a queue, and it is
     # counted below rather than listed, because 373 rows would bury the live ones.
-    cases = [f for f in op
-             if f.get("status") in ("reported", "contained", "watching")
-             or (f.get("tier") in ("page", "notify") and not _human_ack(f)
-                 and not f.get("backfill"))]
+    if s.get("triage_version"):
+        try:
+            from triage import queue_case
+        except ImportError:
+            from notify.triage import queue_case
+        cases = [f for f in op if queue_case(f, now.timestamp())]
+    else:
+        cases = [f for f in op if f.get("status") not in ("closed", "archived")
+                 and (f.get("status") in ("reported", "contained", "watching")
+                      or (f.get("tier") in ("page", "notify") and not _human_ack(f)
+                          and not f.get("backfill")))]
     history = [f for f in op if f.get("backfill") and f.get("tier") in ("page", "notify")]
     hist_line = (f"\n<i>{len(history)} older page/notify finding(s) from before this channel "
                  f"was live are in the record but not listed here — they were never sent. "
@@ -320,6 +333,13 @@ def cases_text(s):
         return ("\u2705 <b>Nothing is waiting on a person right now.</b>\n"
                 "<i>That is not an all-clear — it means nothing has crossed a level that "
                 "asks for a decision.</i>" + hist_line)
+    # One actionable episode per wallet; individual rule records remain addressable.
+    if s.get("triage_version"):
+        grouped = {}
+        for f in cases:
+            key = f.get("tg_message_id") or f.get("key") or f.get("id")
+            grouped.setdefault(key, f)
+        cases = list(grouped.values())
     ordered = sorted(cases, key=lambda x: str(x.get("status_ts") or x.get("first_ts") or ""))
     shown, extra = ordered[:CASES_MAX], len(ordered) - CASES_MAX
     L = [f"<b>📁 Open cases — {len(ordered)}</b>", ""]
@@ -353,6 +373,12 @@ def status_text(s):
     reader nothing and were the first screen they ever saw."""
     op = [f for f in (s.get("open") or {}).values() if f.get("ack_by") != "go-live-seed"]
     live = [f for f in op if not f.get("ack_by")]
+    if s.get("triage_version"):
+        try:
+            from triage import queue_case
+        except ImportError:
+            from notify.triage import queue_case
+        live = [f for f in op if queue_case(f, dt.datetime.now(dt.UTC).timestamp())]
     pages = [f for f in live if f.get("tier") == "page"]
     held = [f for f in live if f.get("pending_send")]
     # Public run health + the private detector health (notify/health.py): the
@@ -373,6 +399,11 @@ def status_text(s):
     else:
         L.append(f"<b>{len(live)} case(s)</b> nobody has answered yet"
                  + (f", <b>{len(pages)}</b> of them marked <i>needs attention now</i>." if pages else "."))
+    if s.get("triage_version"):
+        current = [f for f in op if f.get("status") not in ("closed", "archived")]
+        verifying = sum(bool(f.get("needs_triage")) for f in current)
+        observing = sum(f.get("triage_decision") in ("observe", "expected") for f in current)
+        L += [f"Automatic verification: {verifying} pending; {observing} observations recorded without a review request."]
     inc = s.get("incident")
     if inc:
         L += ["", f"⚠️ <b>Incident mode is on</b> since {str(inc.get('started'))[11:16]} UTC. "
