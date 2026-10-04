@@ -21,6 +21,11 @@ class TriageTests(unittest.TestCase):
         self.assertFalse(triage.queue_case(f,NOW));self.assertEqual(request_enrichment.pending(s),[f])
         triage.prepare(s,NOW);self.assertEqual(f['triage_generation'],1)
 
+    def test_existing_fresh_unhandled_case_enters_automatic_verification(self):
+        f=case(pending_send=False,last_sent='2026-10-04T11:00:00Z',tier='notify',signal='S-G')
+        s={'open':{'case1':f}};triage.prepare(s,NOW)
+        self.assertTrue(f['needs_triage']);self.assertFalse(triage.queue_case(f,NOW))
+
     def test_wallet_exception_waits_for_private_identity_before_notification(self):
         f=case(signal='CAP',tier='notify');s={'open':{'case1':f}}
         triage.prepare(s,NOW)

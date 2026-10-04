@@ -65,7 +65,7 @@ def prepare(state, now):
                 pass
             periodic = (stamp(f.get('triage_ts')) > 0 and stamp(f.get('triage_ts')) < now - 6*3600
                         and stamp(f.get('ts')) > stamp(f.get('triage_finding_ts')))
-            first = not f.get('triage_generation') and not f.get('last_sent') and not f.get('backfill')
+            first = not f.get('triage_generation') and not f.get('backfill')
             if f.get('pending_send') or first or ((growth or periodic) and not f.get('needs_triage')):
                 f['triage_generation'] = int(f.get('triage_generation') or 0) + 1
                 f['triage_value'] = f.get('value')
