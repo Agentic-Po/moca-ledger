@@ -27,6 +27,8 @@ jobs:
           python3 notify/weekly.py || rc=$?
           python3 notify/msglog.py push || echo "msglog push failed — this notice may be unmatchable"
           exit $rc
+      - name: PII gate before publication
+        run: python3 tests/test_pii.py --tree .
       - name: Commit stamp
         run: |
           git config user.name  "moca-ledger-bot"

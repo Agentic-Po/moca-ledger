@@ -7,6 +7,7 @@ State:  alerts/state.json  — written BEFORE sending so a retry never double-se
 import argparse, json, os, sys, time, urllib.request, urllib.parse, pathlib, datetime as dt
 
 ROOT  = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(1, str(ROOT))
 try:                                   # public Actions logs: no detector status
     from privlog import private_print
 except ImportError:
@@ -858,18 +859,10 @@ def _blind_reasons(hb):
             out.append(f"I am {lag:,} blocks behind the chain tip, so I am not seeing recent activity")
     except (TypeError, ValueError):
         pass
-    # Ask the DETECTOR whether it is blind, do not re-decide it here. This carried its
-    # own 48-hour threshold copied from the watchdog, while the detector's own line is
-    # stale_after_h = 24 (signals/__init__.py) — so at 29 h the detector had already
-    # declared "hashed-stale" and FALLEN BACK, and this message still posted a green
-    # tick saying "Still watching". Two thresholds for one question is how a proof of
-    # life ends up reassuring about a system that is running blind. There is now one.
-    if str(hb.get("mindset_source") or "").endswith("stale"):
-        age = hb.get("mindset_age_h")
-        out.append(f"my list of which wallets are creators is stale"
-                   + (f" ({age:.0f} h old)" if isinstance(age, (int, float)) else "")
-                   + " and I have fallen back to reading it from the chain alone, so a "
-                     "creator I have not seen pay out before may not be recognised")
+    from notify.health import mindset_warning
+    warning = mindset_warning(hb)
+    if warning:
+        out.append(warning)
     if hb.get("detect_ok") is False:
         out.append("my last detection pass did not finish")
     if hb.get("thresholds_override_error"):

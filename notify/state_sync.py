@@ -298,6 +298,8 @@ def merge(remote, local):
                                                             "telegram_offset")})
     out["telegram_offset"] = max(int(remote.get("telegram_offset") or 0),
                                  int(local.get("telegram_offset") or 0))
+    out["private_dispatch_at"] = max(float(remote.get("private_dispatch_at") or 0),
+                                     float(local.get("private_dispatch_at") or 0))
     for field in ("by_message", "muted"):
         m = dict(remote.get(field) or {}); m.update(local.get(field) or {})
         if m: out[field] = m

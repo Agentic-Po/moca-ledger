@@ -8,9 +8,10 @@ every ten minutes forever, and it only survives if the state is pushed. So the
 push result is checked, not discarded: a lost push is reported as a re-dispatch
 that WILL happen, and the exit code goes non-zero.
 """
-import json, os, pathlib, sys, urllib.request
+import json, os, pathlib, sys, time, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(1, str(ROOT))
 try:                              # public Actions logs: no finding ids, no counts
     from privlog import private_print
 except ImportError:
@@ -36,10 +37,13 @@ def dispatch(finding_id, pat, target=TARGET):
         return False, f"{type(e).__name__}: {str(e)[:60]}"
 
 
-def pending(state):
+def pending(state, now=None):
     if state.get("triage_version"):
+        from notify.triage import stamp
+        now = time.time() if now is None else now
         return [f for f in (state.get("open") or {}).values()
-                if f.get("needs_triage") and not f.get("triage_requested")
+                if f.get("needs_triage") and (not f.get("triage_requested")
+                    or now - max(stamp(f.get("triage_ts")), stamp(state.get("private_dispatch_at"))) >= 3600)
                 and f.get("status") not in ("closed", "archived") and f.get("id")]
     return [f for f in (state.get("open") or {}).values()
             if f.get("tier") in ("page", "notify") and not f.get("pending_send")
@@ -49,27 +53,36 @@ def pending(state):
 def main():
     pat = os.environ.get("PRIVATE_REPO_PAT")
     s = json.loads(STATE.read_text()) if STATE.exists() else {}
-    todo = pending(s)
-    if not todo:
+    now = time.time()
+    todo = pending(s, now)
+    triage = bool(s.get("triage_version"))
+    elapsed = now - float(s.get("private_dispatch_at") or 0)
+    maintenance = triage and elapsed >= 6 * 3600
+    urgent = any(not f.get("triage_requested") and (f.get("signal") in {"S-X", "4b", "S-C"}
+                 or (f.get("tier") == "page" and not f.get("shadow_of"))) for f in todo)
+    if triage and elapsed < 50 * 60 and not urgent:
+        private_print("enrichment: batch cooldown", public="enrichment: ok"); return 0
+    if not todo and not maintenance:
         private_print("enrichment: nothing to request", public="enrichment: ok"); return 0
     if not pat:
-        private_print(f"enrichment: {len(todo)} pending, no PAT — private side will pick them up on its hourly pass",
-                      public="enrichment: no PAT — the private side polls hourly")
+        private_print(f"enrichment: {len(todo)} pending, no PAT — private side will pick them up when its scheduled job runs",
+                      public="enrichment: no PAT — the private side has a scheduled safety net")
         return 0
     sent, failed = 0, 0
     batch = todo if s.get("triage_version") else todo[:10]
-    for f in (batch[:1] if s.get("triage_version") else batch):
+    for f in ((batch[:1] or [{}]) if triage else batch):
         ok, detail = dispatch("" if s.get("triage_version") else f["id"], pat)
         if ok:
             if s.get("triage_version"):
                 for candidate in batch:
                     candidate["triage_requested"] = True
-                sent += len(batch)
+                s["private_dispatch_at"] = now
+                sent += 1
             else:
                 f["enrich_requested"] = True; sent += 1
         else:
             failed += 1
-            private_print(f"enrichment: dispatch failed for {f['id']} ({detail})")
+            private_print(f"enrichment: dispatch failed for {f.get('id', 'maintenance')} ({detail})")
     STATE.write_text(json.dumps(s, indent=1))
     rc = 0
     if sent:

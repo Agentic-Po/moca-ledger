@@ -437,6 +437,7 @@ def detector_health(ctx, state, ok=True):
         "health_ts": now.isoformat(timespec="seconds"),
         "detect_ok": ok,
         "mindset_age_h": ctx.mindset_age_h,
+        "mindset_generated_at": ctx.mindset_generated_at,
         "mindset_source": ctx.mindset_source,
         "open_findings": {
             "page": sum(1 for v in open_f if v.get("tier") == "page"),

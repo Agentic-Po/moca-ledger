@@ -2,8 +2,7 @@
 """Weekly dead-man + schedule keep-alive.
 
 GitHub disables schedules on public repos after 60 days without repository activity,
-so this both stamps activity and reports the observed run gap: silence on a Monday
-means both layers are broken.
+so this stamps activity after confirmed delivery and reports the observed run gap.
 """
 import json, os, pathlib, sys, urllib.request, datetime as dt
 
@@ -36,13 +35,18 @@ def main():
            if len(gaps) >= MIN_SAMPLES else None)
     stamp = {"stamped_at": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
              "run_gap_min_p50": p50, "run_gap_min_p95": p95, "samples": len(gaps)}
-    (ROOT / "alerts" / "weekly.json").write_text(json.dumps(stamp, indent=1))
     from notify.telegram import send, _log_out
-    _log_out(send(f"🗓 <b>weekly check</b>\n"
-         f"detector alive · last run {hb.get('run_ts','?')}\n"
+    response = send(f"🗓 <b>weekly check</b>\n"
+         f"latest recorded run {hb.get('run_ts','?')}\n"
          f"observed run gap: p50 {p50} min · p95 {p95} min (n={len(gaps)})\n"
          f"open findings: {hb.get('open_findings')}\n"
-         f"<i>set the healthchecks period from p95; silence on a Monday means both layers are down</i>", silent=True), "health")
+         f"<i>These are observed gaps between published crawl updates, not a delivery guarantee. "
+         f"Schedules can be delayed; quiet is not an all-clear. Check workflow and source health if updates stop.</i>", silent=True)
+    if not response.get("ok") or not (response.get("result") or {}).get("message_id"):
+        private_print("weekly: delivery not confirmed", public="weekly: delivery not confirmed", file=sys.stderr)
+        return 3
+    _log_out(response, "health")
+    (ROOT / "alerts" / "weekly.json").write_text(json.dumps(stamp, indent=1))
     private_print(json.dumps(stamp), public="weekly: stamped")
     return 0
 
