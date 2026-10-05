@@ -46,3 +46,22 @@ def load(state=None, root=None):
         state = _read(base / "alerts" / "state.json")
     hb.update((state or {}).get(PRIVATE_KEY) or {})
     return hb
+
+
+def mindset_warning(hb):
+    """Describe the real union of snapshot membership and chain discovery."""
+    import html
+    source = hb.get("mindset_source")
+    if source == "hashed-stale":
+        generated = hb.get("mindset_generated_at")
+        age = hb.get("mindset_age_h")
+        when = ("Snapshot generated " + html.escape(str(generated)) if generated
+                else "Snapshot generation time unavailable")
+        if isinstance(age, (int, float)):
+            when += f" ({age:.1f} h old at the latest ledger timestamp)"
+        return (when + ". Existing snapshot memberships remain in use alongside chain discovery; "
+                "new Minds absent from both may be missed. Refresh the private address snapshot.")
+    if source == "chain-only":
+        return ("No usable private address snapshot is available. Membership comes from chain discovery only; "
+                "Minds with no observed treasury or quest receipt may be missed.")
+    return None

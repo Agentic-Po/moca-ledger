@@ -774,8 +774,8 @@ def t_heartbeat():
             fallen = SENT[-1]["text"]
             check("a detector that has FALLEN BACK is never reported as still watching",
                   "Still watching" not in fallen, fallen.splitlines()[0])
-            check("...and the message says it fell back, in words",
-                  "fallen back" in fallen)
+            check("...and the message describes retained snapshot plus chain discovery",
+                  "alongside chain discovery" in fallen and "chain alone" not in fallen)
             check("running-but-blind tells the reader quiet means unknown",
                   "unknown rather than quiet" in blind)
         finally:

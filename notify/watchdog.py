@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
-"""Cross-repo watchdog: this repo watches the dashboard, the dashboard watches this
-repo, and healthchecks.io watches from outside GitHub. Any single dark layer is
-detected by another; all three dark is what the external dead-man catches.
-
-Run inside the crawl workflow (cheap: two unauthenticated public API calls).
-"""
+"""Report this project's own source freshness and crawl lag."""
 import json, os, pathlib, sys, time, urllib.request, datetime as dt
 
 ROOT  = pathlib.Path(__file__).resolve().parent.parent
 STATE = ROOT / "alerts" / "state.json"
-PEER  = "Agentic-Po/skill-payout-dashboard"
 DEDUP_H = 6
 
+sys.path.insert(1, str(ROOT))
 try:                              # public Actions logs: no detector status
     from privlog import private_print
 except ImportError:
@@ -25,19 +20,8 @@ except ImportError:
 MINDSET_STALE_H = 48
 LAG_BLOCKS_MAX  = 900
 
-def get(url):
-    return json.load(urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "moca-watchdog"}), timeout=25))
-
 def _may_send():
-    """Only a scheduled run may page this channel.
-
-    Every condition this module checks is about the DEPLOYMENT — is the peer repo
-    committing, is the crawler keeping up — and none of them is meaningful from a
-    laptop. Running it by hand posted a false "peer repo unreachable" to the live
-    security group, because an unauthenticated GitHub API call from a developer
-    machine is rate-limited long before the peer repo is actually dark. A false
-    alert in this channel costs more than a missed local test: it is the channel
-    people are meant to trust at 04:00. --force is the deliberate override."""
+    """Only hosted runs or an explicit --force may send deployment warnings."""
     return bool(os.environ.get("GITHUB_ACTIONS") or "--force" in sys.argv)
 
 
@@ -53,14 +37,6 @@ def main():
     s = json.loads(STATE.read_text()) if STATE.exists() else {}
     now = time.time(); last = s.get("watchdog", {}); alerts = []
     try:
-        c = get(f"https://api.github.com/repos/{PEER}/commits/main")
-        when = c["commit"]["committer"]["date"]
-        age_min = (dt.datetime.now(dt.UTC) - dt.datetime.fromisoformat(when.replace("Z", "+00:00"))).total_seconds() / 60
-        if age_min > 150:
-            alerts.append(("peer_dark", f"⏳ <b>peer repo dark</b>\nlast commit {age_min:.0f} min ago (expected hourly)"))
-    except Exception as e:
-        alerts.append(("peer_unreachable", f"⏳ <b>peer repo unreachable</b>\n{str(e)[:90]}"))
-    try:
         # run health is public (heartbeat.json); the mind-set age is private
         # (state["detector_health"], see notify/health.py)
         try:
@@ -69,21 +45,33 @@ def main():
             sys.path.insert(1, str(ROOT))
             from notify.health import load as _health
         hb = _health(s, root=ROOT)
-        if (hb.get("mindset_age_h") or 0) > MINDSET_STALE_H:
-            alerts.append(("mindset_stale", f"⏳ <b>address set stale</b>\n{hb.get('mindset_age_h')} h old — detectors fell back to {hb.get('mindset_source')}"))
+        from notify.health import mindset_warning
+        warning = mindset_warning(hb)
+        if warning:
+            alerts.append(("mindset_stale", "⏳ <b>Address coverage incomplete</b>\n" + warning))
         if (hb.get("lag_blocks") or 0) > LAG_BLOCKS_MAX:
             alerts.append(("lag", f"⏳ <b>ledger behind tip</b>\n{hb.get('lag_blocks')} blocks — crawler running but not keeping up"))
     except Exception:
         pass
+    if not any(key == "mindset_stale" for key, _ in alerts):
+        last.pop("mindset_stale", None)
+        last.pop("mindset_snapshot", None)
     fired, lost = 0, 0
     for key, msg in alerts:
-        if now - float(last.get(key, 0)) < DEDUP_H * 3600: continue
-        # Only a DELIVERED alert starts the six-hour dedupe. Recording the attempt
+        hours = 24 if key == "mindset_stale" else DEDUP_H
+        snapshot = str(hb.get("mindset_generated_at") or hb.get("mindset_source")) if key == "mindset_stale" else None
+        unchanged = key != "mindset_stale" or last.get("mindset_snapshot") == snapshot
+        if unchanged and now - float(last.get(key, 0)) < hours * 3600: continue
+        # Only a DELIVERED alert starts the reminder cooldown. Recording the attempt
         # meant an undelivered "ledger behind tip" was announced to nobody and then
-        # suppressed for six hours, on a green run (fix-round critic #6).
+        # suppressed through the cooldown on a green run.
         r = send(msg)
-        if r.get("ok"):
+        if r.get("ok") and (r.get("result") or {}).get("message_id"):
             last[key] = now; fired += 1
+            if key == "mindset_stale":
+                last["mindset_snapshot"] = snapshot
+            from notify.telegram import _log_out
+            _log_out(r, "health")
         else:
             lost += 1
             private_print(f"watchdog: {key} NOT delivered ({r.get('error')}) — not deduped, "

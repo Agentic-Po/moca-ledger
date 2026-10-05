@@ -247,10 +247,12 @@ class Ctx:
         # ---- Mind set: salted-hash mindset.json UNION chain (Treasury/QUEST receipts)
         self.mindset_source = "chain-only"
         self.mindset_age_h = None
+        self.mindset_generated_at = None
         mindset_hours = {}
         ms_path = os.path.join(root, "detect", "mindset.json")
         if self.salt and os.path.exists(ms_path):
             ms = json.load(open(ms_path))
+            self.mindset_generated_at = ms.get("generated_at")
             gen = ts_of(ms.get("generated_at", "1970-01-01T00:00"))
             stale_h = ms.get("stale_after_h", 24)
             age_h = max(0.0, (self.t1 - gen) / H)
