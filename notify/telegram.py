@@ -860,7 +860,10 @@ def _blind_reasons(hb):
     except (TypeError, ValueError):
         pass
     from notify.health import mindset_warning
-    warning = mindset_warning(hb)
+    warning_hb = dict(hb)
+    if warning_hb.get("mindset_generated_at"):
+        warning_hb["mindset_generated_at"] = _sgt_time(warning_hb["mindset_generated_at"])
+    warning = mindset_warning(warning_hb)
     if warning:
         out.append(warning)
     if hb.get("detect_ok") is False:
@@ -868,6 +871,17 @@ def _blind_reasons(hb):
     if hb.get("thresholds_override_error"):
         out.append("a threshold override was rejected, so I am running on committed defaults")
     return out
+
+
+def _sgt_time(value):
+    """Render known UTC source timestamps without exposing unparsed input."""
+    try:
+        parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt.UTC)
+        return parsed.astimezone(dt.timezone(dt.timedelta(hours=8))).strftime("%d %b %Y %H:%M SGT")
+    except (TypeError, ValueError):
+        return "not available"
 
 
 def heartbeat(force=False):
@@ -878,32 +892,28 @@ def heartbeat(force=False):
     if not force and s.get("last_heartbeat_day") == today:
         private_print("heartbeat: already sent today", public="heartbeat: ok"); return 0
 
-    block = hb.get("ledger_last") or "?"
     rows = int(hb.get("rows_total") or 0)
     prev_rows = int(s.get("last_heartbeat_rows") or 0)
     scanned = rows - prev_rows if prev_rows else None
-    since = s.get("last_heartbeat_day")
-    open_f = hb.get("open_findings") or {}
-    fires = hb.get("fires_last_24h_total")
 
     live = [f for f in (s.get("open") or {}).values()
             if f.get("status") in ("reported", "contained", "watching")]
     blind = _blind_reasons(hb)
 
-    L = ["\U0001f7e2 <b>Still watching.</b>" if not blind
-         else "\u26a0\ufe0f <b>Running, but not seeing properly.</b>"]
-    L.append(f"<i>Chain read up to {block} UTC"
-             + (f" · {scanned:,} new rows since yesterday" if scanned and scanned > 0 else "")
-             + (f" · {fires} thing(s) crossed a level in the last 24 h" if fires is not None else "")
-             + "</i>")
+    pending = sum(bool(f.get("needs_triage")) and f.get("status") not in ("closed", "archived")
+                  for f in (s.get("open") or {}).values())
+    L = ["🟢 <b>Detection running</b>" if not blind
+         else "⚠️ <b>Detection coverage degraded</b>"]
+    L += ["Chain checked through: " + _sgt_time(hb.get("ledger_last")),
+          "Creator snapshot source updated: " + _sgt_time(hb.get("mindset_generated_at")),
+          f"Private verification pending: {pending} check{'s' if pending != 1 else ''}.",
+          "Independent on-chain exceptions still alert; payout and identity verification may lag."]
     if blind:
         L += ["", "<b>Why that matters:</b>"] + [f"• {b}" for b in blind]
         L += ["", "Until that clears, treat quiet from me as unknown rather than quiet."]
     if live:
         L += ["", f"{len(live)} case(s) you have marked and not closed. <code>/cases</code> for the list."]
-    L += ["", "<i>This is not an all-clear. It means the pipeline ran and wrote a number that "
-              "moved — nothing more. Some ways of moving value produce no alert at all, and I "
-              "cannot pause or block anything.</i>"]
+    L += ["", "<i>This is not an all-clear. I cannot pause or block payouts.</i>"]
 
     r = send("\n".join(L), silent=True)
     _log_out(r, "health")

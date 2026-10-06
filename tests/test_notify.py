@@ -743,7 +743,7 @@ def t_heartbeat():
             check("it says explicitly that it is not an all-clear", "not an all-clear" in body)
             check("it says it cannot pause or block anything", "cannot pause or block" in body)
             check("it carries a moving number, not just a reassurance",
-                  "2026-08-23 14:52" in body, body.splitlines()[1][:70])
+                  "23 Aug 2026 22:52 SGT" in body, body.splitlines()[1][:70])
             check("it does not claim nothing happened",
                   "no issues" not in body.lower() and "all good" not in body.lower()
                   and "everything is fine" not in body.lower())
@@ -760,7 +760,7 @@ def t_heartbeat():
                                         "mindset_source": "hashed-stale", "detect_ok": True}
             telegram.heartbeat(force=True)
             blind = SENT[-1]["text"]
-            check("running-but-blind does not say 'still watching'", "Still watching" not in blind)
+            check("running-but-blind does not say 'still watching'", "Detection coverage degraded" in blind and "Detection running" not in blind)
             check("running-but-blind names why it cannot see", "blocks behind" in blind)
 
             # The case that shipped wrong: the DETECTOR had already declared itself stale
@@ -773,7 +773,7 @@ def t_heartbeat():
             telegram.heartbeat(force=True)
             fallen = SENT[-1]["text"]
             check("a detector that has FALLEN BACK is never reported as still watching",
-                  "Still watching" not in fallen, fallen.splitlines()[0])
+                  "Detection coverage degraded" in fallen and "Detection running" not in fallen, fallen.splitlines()[0])
             check("...and the message describes retained snapshot plus chain discovery",
                   "alongside chain discovery" in fallen and "chain alone" not in fallen)
             check("running-but-blind tells the reader quiet means unknown",
