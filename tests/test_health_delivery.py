@@ -24,6 +24,21 @@ class HealthDelivery(unittest.TestCase):
                 rc = weekly.main()
                 return rc, (root/'alerts/weekly.json').exists(), receipt.call_count
 
+    def test_heartbeat_reports_source_and_pending_checks_without_crossing_count(self):
+        state = {'open': {'active': {'needs_triage':True}, 'closed': {'needs_triage':True,'status':'closed'}, 'archived': {'needs_triage':True,'status':'archived'}, 'held': {'status':'reported'}}}
+        hb = dict(ledger_last='2026-10-06 01:32',mindset_generated_at='2026-10-05T15:10:29Z',mindset_source='hashed',detect_ok=True,fires_last_24h_total=987654)
+        with patch.object(telegram,'load_state',return_value=state), patch.object(telegram,'_hb_doc',return_value=hb), patch.object(telegram,'send',return_value={'ok':True,'result':{'message_id':123}}) as send, patch.object(telegram,'save_state'), patch.object(telegram,'_log_out'):
+            self.assertEqual(telegram.heartbeat(force=True),0)
+            body=send.call_args.args[0]
+            self.assertIn('Detection running',body)
+            self.assertIn('06 Oct 2026 09:32 SGT',body)
+            self.assertIn('05 Oct 2026 23:10 SGT',body)
+            self.assertIn('Private verification pending: 1 check.',body)
+            self.assertIn('1 case(s)',body)
+            self.assertNotIn('987654',body)
+            self.assertIn('not an all-clear',body)
+            self.assertEqual(telegram._sgt_time('<unexpected>'),'not available')
+
     def test_weekly_requires_delivery_receipt(self):
         for response in ({'ok':False}, {'ok':True,'result':{}}):
             self.assertEqual(self.weekly_run(response), (3,False,0))
