@@ -14,7 +14,7 @@ class HealthDelivery(unittest.TestCase):
         baseline={'open':{'synthetic':{'status':'acked'}},'last_failure_post':1,'last_run_ok':False}
         states=[]
         for published in (False,True):
-            with patch.object(telegram,'load_state',return_value=deepcopy(baseline)),patch.object(telegram.time,'time',return_value=30000),patch.object(telegram,'save_state') as save,patch.object(telegram,'send',return_value={'ok':True,'result':{'message_id':123}}) as send,patch.object(telegram,'_log_out') as receipt:
+            with patch('notify.coverage_clock.cutoff_lines',return_value=['Saved scan cutoff: synthetic']),patch.object(telegram,'load_state',return_value=deepcopy(baseline)),patch.object(telegram.time,'time',return_value=30000),patch.object(telegram,'save_state') as save,patch.object(telegram,'send',return_value={'ok':True,'result':{'message_id':123}}) as send,patch.object(telegram,'_log_out') as receipt:
                 self.assertEqual(telegram.failure('https://example.invalid/run',checkpoint_published=published),0)
                 states.append(save.call_args.args[0]);self.assertFalse(send.call_args.kwargs['silent'])
                 self.assertEqual(receipt.call_args.args[1],'notice');self.assertEqual(send.call_count,1)
@@ -29,7 +29,7 @@ class HealthDelivery(unittest.TestCase):
     def test_failure_notice_dedup_policy_unchanged_for_both_copies(self):
         for published in (False,True):
             for last_ok,expected in ((True,0),(False,1)):
-                with patch.object(telegram,'load_state',return_value={'last_failure_post':100,'last_run_ok':last_ok}),patch.object(telegram.time,'time',return_value=101),patch.object(telegram,'save_state'),patch.object(telegram,'send',return_value={'ok':False}) as send,patch.object(telegram,'_log_out'):
+                with patch('notify.coverage_clock.cutoff_lines',return_value=['Saved scan cutoff: synthetic']),patch.object(telegram,'load_state',return_value={'last_failure_post':100,'last_run_ok':last_ok}),patch.object(telegram.time,'time',return_value=101),patch.object(telegram,'save_state'),patch.object(telegram,'send',return_value={'ok':False}) as send,patch.object(telegram,'_log_out'):
                     self.assertEqual(telegram.failure('https://example.invalid/run',checkpoint_published=published),0)
                     self.assertEqual(send.call_count,expected)
 
@@ -39,7 +39,7 @@ class HealthDelivery(unittest.TestCase):
         for published in (False,True):
             with tempfile.TemporaryDirectory() as td:
                 root=Path(td);local=root/'msglog'
-                with patch.object(telegram,'STATE',root/'state.json'),patch.object(telegram,'send',return_value={'ok':True,'result':{'message_id':123}}),patch.object(msglog,'LOCAL',local),patch.object(msglog,'INDEX',local/'index.json'),patch.object(msglog,'_INDEX',None),patch.object(msglog,'_DIRTY',False),patch.dict(sys.modules,{'msglog':msglog}),patch.object(state_sync,'push') as detector_push,patch.object(msglog,'push') as receipt_push,patch.object(telegram.urllib.request,'urlopen',side_effect=AssertionError('unexpected network')) as network,contextlib.redirect_stdout(io.StringIO()) as output:
+                with patch('notify.coverage_clock.cutoff_lines',return_value=['Saved scan cutoff: synthetic']),patch.object(telegram,'STATE',root/'state.json'),patch.object(telegram,'send',return_value={'ok':True,'result':{'message_id':123}}),patch.object(msglog,'LOCAL',local),patch.object(msglog,'INDEX',local/'index.json'),patch.object(msglog,'_INDEX',None),patch.object(msglog,'_DIRTY',False),patch.dict(sys.modules,{'msglog':msglog}),patch.object(state_sync,'push') as detector_push,patch.object(msglog,'push') as receipt_push,patch.object(telegram.urllib.request,'urlopen',side_effect=AssertionError('unexpected network')) as network,contextlib.redirect_stdout(io.StringIO()) as output:
                     self.assertEqual(telegram.failure('https://example.invalid/run',checkpoint_published=published),0)
                     msglog.flush()
                     self.assertTrue((root/'state.json').exists());self.assertTrue((local/'index.json').exists())
