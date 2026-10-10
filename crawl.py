@@ -8,7 +8,7 @@
 - State: state.json {next_block, head_at_start, rows_total}. Re-run to resume / catch up.
 Timestamps: Base produces a block every 2 s deterministically -> ts = anchor_ts + 2*(block-anchor).
 """
-import json, os, sys, time, urllib.request, urllib.error, datetime as dt
+import json, os, sys, time, contextlib, urllib.request, urllib.error, datetime as dt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RPCS = [u for u in (os.environ.get("BASE_RPCS") or
@@ -30,6 +30,28 @@ def _range_error(message):
             or "response size" in message or "too large" in message
             or ("limit" in message and ("block" in message or "result" in message)))
 
+class CrawlBudgetExceeded(TimeoutError):
+    pass
+
+_DEADLINE = None
+PARTIAL_EXIT = 75
+
+def _remaining():
+    if _DEADLINE is None:
+        return None
+    remaining = _DEADLINE - time.monotonic()
+    if remaining <= 0:
+        raise CrawlBudgetExceeded("crawl budget exhausted")
+    return remaining
+
+def _pause(seconds):
+    remaining = _remaining()
+    if remaining is not None and remaining <= seconds:
+        raise CrawlBudgetExceeded("crawl budget exhausted")
+    time.sleep(seconds)
+
+_PREFERRED = {}
+
 def rpc(method, params, timeout=20):
     body = json.dumps({"jsonrpc":"2.0","id":1,"method":method,"params":params}).encode()
     # Try every provider before shrinking: one provider's cap must not
@@ -37,11 +59,18 @@ def rpc(method, params, timeout=20):
     last = "unavailable"
     for attempt in range(2):
         limited = False
-        for url in RPCS:
+        preferred = _PREFERRED.get(method)
+        providers = ([preferred] if preferred in RPCS else []) + [u for u in RPCS if u != preferred]
+        for url in providers:
+            try:
+                remaining = _remaining()
+            except CrawlBudgetExceeded:
+                raise RuntimeError(f"rpc failed: {method} (budget before verified response)") from None
+            request_timeout = timeout if remaining is None else min(timeout, remaining)
             try:
                 req = urllib.request.Request(url.strip(), data=body, headers={"content-type":"application/json","User-Agent":"Mozilla/5.0 (moca-ledger/1.0; polite crawler)"})
                 try:
-                    response = urllib.request.urlopen(req, timeout=timeout)
+                    response = urllib.request.urlopen(req, timeout=request_timeout)
                     with response:
                         j = json.load(response)
                 except urllib.error.HTTPError as e:
@@ -58,50 +87,88 @@ def rpc(method, params, timeout=20):
                     if method == "eth_getLogs" and not isinstance(j["result"], list):
                         last = "invalid log result"
                         continue
+                    _PREFERRED[method] = url
                     return j["result"]
                 error = j.get("error", {})
                 if isinstance(error, dict) and _range_error(str(error.get("message", ""))):
                     limited = True
                 last = "provider rejected request"
+            except CrawlBudgetExceeded:
+                raise
             except Exception:
                 last = "provider unavailable"
         if limited:
             raise ValueError("provider range limit")
         if attempt == 0:
-            time.sleep(PACE + 1)
+            try:
+                _pause(PACE + 1)
+            except CrawlBudgetExceeded:
+                raise RuntimeError(f"rpc failed: {method} (budget after provider failure)") from None
     raise RuntimeError(f"rpc failed: {method} ({last})")
 
 def ts_of(block):  return ANCHOR_TS + 2 * (block - ANCHOR_BLOCK)
 def day_of(block): return dt.datetime.fromtimestamp(ts_of(block), dt.UTC).strftime("%Y-%m-%d")
 
 def load_state():
-    if os.path.exists(STATE): return json.load(open(STATE))
+    if os.path.exists(STATE):
+        with open(STATE) as f:
+            return json.load(f)
     return {"next_block": START_BLOCK, "rows_total": 0, "started": dt.datetime.now(dt.UTC).isoformat()}
 def save_state(s):
-    tmp = STATE + ".tmp"; json.dump(s, open(tmp, "w"), indent=1); os.replace(tmp, STATE)
+    tmp = STATE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(s, f, indent=1)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, STATE)
 
-def main():
+def _crawl(stack):
     global ANCHOR_BLOCK, ANCHOR_TS
     os.makedirs(DATA, exist_ok=True)
     os.makedirs(os.path.join(HERE, "logs"), exist_ok=True)
     head = int(rpc("eth_blockNumber", []), 16)
     b = rpc("eth_getBlockByNumber", [hex(head), False]); ANCHOR_BLOCK, ANCHOR_TS = head, int(b["timestamp"], 16)
     st = load_state(); nxt = st["next_block"]; target = head - CONFIRM
-    win = st.get("win", 1500); files = {}; seen = {}
-    log = open(os.path.join(HERE, "logs", "crawl.log"), "a")
+    ceiling = st.get("range_ceiling")
+    win = min(st.get("win", 1500), ceiling or 2000); files = {}; seen = {}
+    range_rejected = False
+    log = stack.enter_context(open(os.path.join(HERE, "logs", "crawl.log"), "a"))
     def say(m):
         line = f"{dt.datetime.now(dt.UTC).strftime('%H:%M:%S')} {m}"; print(line, flush=True); log.write(line+"\n"); log.flush()
     say(f"start next={nxt} target={target} behind={target-nxt} blocks win={win}")
-    if nxt > target: say("up to date"); return
+    if nxt > target:
+        say("up to date")
+        log.close()
+        return
+    def partial():
+        for f in files.values():
+            f.flush()
+            os.fsync(f.fileno())
+            f.close()
+        save_state(st)
+        say("crawl checkpoint saved; catch-up incomplete")
+        log.close()
+        return PARTIAL_EXIT
     t0 = time.time(); req = 0
     while nxt <= target:
         to = min(nxt + win - 1, target)
         try:
+            _remaining()
             logs = rpc("eth_getLogs", [{"fromBlock": hex(nxt), "toBlock": hex(to), "address": TOK, "topics": [TOPIC]}])
+        except CrawlBudgetExceeded:
+            if range_rejected:
+                raise RuntimeError("rpc failed: eth_getLogs (budget after range refusal)") from None
+            return partial()
         except ValueError as e:
             if win == 1:
                 raise RuntimeError("rpc failed: eth_getLogs at minimum range") from None
-            win = max(1, win // 2); say(f"shrink win->{win} ({str(e)[:60]})"); time.sleep(PACE); continue
+            range_rejected = True
+            win = max(1, win // 2); say(f"shrink win->{win} ({str(e)[:60]})")
+            try:
+                _pause(PACE)
+            except CrawlBudgetExceeded:
+                raise RuntimeError("rpc failed: eth_getLogs (budget after range refusal)") from None
+            continue
         req += 1
         rows_by_day = {}; event_keys = set()
         for l in logs:
@@ -129,7 +196,7 @@ def main():
                             old = json.loads(line)
                             if old["block"] >= nxt:
                                 seen[d].add((old["tx"], old["li"]))
-                files[d] = open(path, "a")
+                files[d] = stack.enter_context(open(path, "a"))
             fresh = []
             for row in rows:
                 key = (row["tx"], row["li"])
@@ -140,14 +207,39 @@ def main():
                 files[d].write("\n".join(fresh) + "\n")
                 files[d].flush()
                 os.fsync(files[d].fileno())
+        if range_rejected:
+            ceiling = win
+            st["range_ceiling"] = ceiling
+            range_rejected = False
         st["rows_total"] += len(event_keys); nxt = to + 1; st["next_block"] = nxt; st["win"] = win
-        if len(logs) < 700 and win < 2000: win = min(2000, win + 100)
+        if len(logs) < 700 and win < (ceiling or 2000): win = min(ceiling or 2000, win + 100)
         save_state(st)
         if req % 10 == 0:
             done = nxt - START_BLOCK; rate = (time.time()-t0)/req
             say(f"block {nxt} ({day_of(nxt)}) rows={st['rows_total']} win={win} req={req} {rate:.1f}s/req eta={(target-nxt)/win*rate/60:.0f}m")
-        time.sleep(PACE)
+        if nxt <= target:
+            try:
+                _pause(PACE)
+            except CrawlBudgetExceeded:
+                return partial()
     save_state(st); [f.close() for f in files.values()]
     say(f"done: next={nxt} rows_total={st['rows_total']}")
+    log.close()
 
-if __name__ == "__main__": main()
+def _main():
+    with contextlib.ExitStack() as stack:
+        return _crawl(stack)
+
+def main():
+    global _DEADLINE
+    budget = float(os.environ.get("CRAWL_BUDGET_SECONDS", "240"))
+    if not 1 <= budget <= 240:
+        raise ValueError("crawl budget must be between 1 and 240 seconds")
+    prior = _DEADLINE
+    _DEADLINE = time.monotonic() + budget
+    try:
+        return _main()
+    finally:
+        _DEADLINE = prior
+
+if __name__ == "__main__": sys.exit(main())

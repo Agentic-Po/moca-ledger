@@ -18,6 +18,8 @@ jobs:
       - run: pip install -q -r requirements.txt
       - name: Crawl provider and checkpoint regression
         run: python3 tests/test_crawl_rpc.py
+      - name: Bounded checkpoint and workflow regression
+        run: python3 tests/test_crawl_budget.py
       - name: Automatic triage regression
         run: python3 -m unittest discover -s tests -p test_triage.py
       - name: Health delivery regression
