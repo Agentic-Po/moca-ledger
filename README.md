@@ -152,3 +152,16 @@ cash-out and other non-reward detectors remain active.
 Wallet notification delivery is handed to the private companion pipeline for fixed read-only verification before publication to the internal Telegram channel. Public runners receive only case-generation decisions and message IDs, never identity or skill-catalogue results. Routine observations are recorded automatically; inactive episodes leave the decision queue and fresh qualifying episodes can reopen automatic archives. Existing platform-health and independent-flow warning paths remain available. Dispatch is batched on the existing workflow; there is no new schedule or local-machine runtime requirement.
 
 Bounded catch-up: the crawler uses a 240-second acquisition budget, including head bootstrap. Only a clean boundary after durable transfer writes and an atomic checkpoint yields exit 75. The existing workflow validates catalog and PII before committing that partial checkpoint; the job remains red and skips detection and healthy-success publication until the finalized target is reached. Private detector memory is saved only after a successful restore and an attempted detector run, never after cancellation. Successful public providers are preferred per method within a process, and a served range ceiling persists after a genuine range refusal; rate limits do not shrink it. No cadence, provider, secret or finality change is included. Catch-up capacity remains dependent on actual successful run frequency and public RPC availability. Socket timeouts bound inactivity rather than guaranteeing a strict wall-clock deadline.
+
+### Saved coverage timestamps in notices
+
+A validated and published catch-up checkpoint notice reports `state.json`'s
+`next_block - 1`, using that block's verified RPC header timestamp in SGT and
+its age at the explicit notice observation time. It never uses the latest
+transfer or the dashboard build clock as a coverage cutoff. Header lookup is
+read-only, uses a ten-second request budget and the existing crawler providers;
+unavailable or invalid headers show the saved block with time unavailable.
+No new schedule, freshness guarantee, detection pass or healthy status is
+implied. Transfer timestamps produced by the crawler's block-spacing estimate
+remain labelled as estimated event times in the daily heartbeat. Genuine
+prepublication failures retain their original failure notice.

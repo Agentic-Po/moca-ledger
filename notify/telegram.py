@@ -904,7 +904,7 @@ def heartbeat(force=False):
                   for f in (s.get("open") or {}).values())
     L = ["🟢 <b>Detection running</b>" if not blind
          else "⚠️ <b>Detection coverage degraded</b>"]
-    L += ["Chain checked through: " + _sgt_time(hb.get("ledger_last")),
+    L += ["Latest recorded transfer (estimated time): " + _sgt_time(hb.get("ledger_last")),
           "Creator snapshot source updated: " + _sgt_time(hb.get("mindset_generated_at")),
           f"Private verification pending: {pending} check{'s' if pending != 1 else ''}.",
           "Independent on-chain exceptions still alert; payout and identity verification may lag."]
@@ -936,8 +936,13 @@ def failure(url, checkpoint_published=False):
     if now - last < 6 * 3600 and s.get("last_run_ok", True):
         private_print("failure post deduped", public="failure post deduped"); return 0
     s["last_failure_post"] = now; s["last_run_ok"] = False; save_state(s)
-    text = (f"🔴 <b>Run incomplete: catch-up checkpoint saved</b>\n"
-            f"Coverage is still behind; detection did not run.\n{url}") if checkpoint_published else f"🔴 <b>detector run failed</b>\n{url}"
+    if checkpoint_published:
+        from notify.coverage_clock import cutoff_lines
+        text = "\n".join(["🔴 <b>Coverage behind · checkpoint saved</b>",
+                            *cutoff_lines(ROOT),
+                            "detection did not run on the remaining range.", url])
+    else:
+        text = f"🔴 <b>detector run failed</b>\n{url}"
     _log_out(send(text, silent=False), "notice"); return 0
 
 if __name__ == "__main__":
