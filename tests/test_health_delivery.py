@@ -18,9 +18,14 @@ class HealthDelivery(unittest.TestCase):
                 self.assertEqual(telegram.failure('https://example.invalid/run',checkpoint_published=published),0)
                 states.append(save.call_args.args[0]);self.assertFalse(send.call_args.kwargs['silent'])
                 self.assertEqual(receipt.call_args.args[1],'notice');self.assertEqual(send.call_count,1)
-                text=send.call_args.args[0];self.assertTrue(text.startswith('🔴'))
+                text=send.call_args.args[0]
                 if published:
-                    self.assertIn('checkpoint saved',text);self.assertIn('detection did not run',text)
+                    self.assertTrue(text.startswith('🟡 <b>Data is catching up · checkpoint saved</b>'))
+                    self.assertIn('Checks have not run on the unscanned range yet.',text)
+                    self.assertIn('Existing scheduled runs will continue catching up.',text)
+                    self.assertIn('Saved scan cutoff: synthetic',text)
+                    self.assertNotIn('🔴',text);self.assertNotIn('progress',text)
+                    self.assertNotIn('normal delay',text);self.assertNotIn('no action needed',text)
                     self.assertNotIn('advanced',text);self.assertNotIn('healthy',text)
                 else:self.assertEqual(text,'🔴 <b>detector run failed</b>\nhttps://example.invalid/run')
         self.assertEqual(states[0],states[1]);self.assertFalse(states[0]['last_run_ok'])
