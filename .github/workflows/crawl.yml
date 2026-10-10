@@ -53,6 +53,7 @@ jobs:
           python3 tests/test_pii.py --tree .
 
       - name: Save incomplete catch-up checkpoint
+        id: checkpoint_save
         if: failure() && !cancelled() && steps.crawl.outputs.partial == 'true' && steps.checkpoint_gate.outcome == 'success'
         run: |
           git config user.name "moca-ledger-bot"
@@ -227,4 +228,8 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: python3 notify/telegram.py --failure "$RUN_URL" || true
+          CHECKPOINT_PUBLISHED: ${{ steps.crawl.outputs.partial == 'true' && steps.checkpoint_gate.outcome == 'success' && steps.checkpoint_save.outcome == 'success' }}
+        run: |
+          args=(--failure "$RUN_URL")
+          if [ "$CHECKPOINT_PUBLISHED" = "true" ]; then args+=(--checkpoint-published); fi
+          python3 notify/telegram.py "${args[@]}" || true

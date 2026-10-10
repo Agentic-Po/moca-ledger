@@ -931,23 +931,27 @@ def heartbeat(force=False):
     return 0
 
 
-def failure(url):
+def failure(url, checkpoint_published=False):
     s = load_state(); last = s.get("last_failure_post", 0); now = time.time()
     if now - last < 6 * 3600 and s.get("last_run_ok", True):
         private_print("failure post deduped", public="failure post deduped"); return 0
     s["last_failure_post"] = now; s["last_run_ok"] = False; save_state(s)
-    _log_out(send(f"🔴 <b>detector run failed</b>\n{url}", silent=False), "notice"); return 0
+    text = (f"🔴 <b>Run incomplete: catch-up checkpoint saved</b>\n"
+            f"Coverage is still behind; detection did not run.\n{url}") if checkpoint_published else f"🔴 <b>detector run failed</b>\n{url}"
+    _log_out(send(text, silent=False), "notice"); return 0
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--send-pending", action="store_true")
     ap.add_argument("--failure", metavar="URL")
+    ap.add_argument("--checkpoint-published", action="store_true", help="with --failure: validated incomplete checkpoint was published")
     ap.add_argument("--gate-failed", metavar="URL", dest="gate_failed")
     ap.add_argument("--heartbeat", action="store_true", help="once-a-day proof of life")
     ap.add_argument("--force", action="store_true", help="with --heartbeat: send even if today already had one")
     ap.add_argument("--test", metavar="TEXT")
     a = ap.parse_args()
-    if a.failure: sys.exit(failure(a.failure))
+    if a.checkpoint_published and not a.failure: ap.error("--checkpoint-published requires --failure")
+    if a.failure: sys.exit(failure(a.failure, checkpoint_published=a.checkpoint_published))
     if a.gate_failed: sys.exit(gate_failed(a.gate_failed))
     if a.heartbeat:   sys.exit(heartbeat(force=a.force))
     if a.test:
