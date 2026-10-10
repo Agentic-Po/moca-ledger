@@ -8,7 +8,7 @@
 - State: state.json {next_block, head_at_start, rows_total}. Re-run to resume / catch up.
 Timestamps: Base produces a block every 2 s deterministically -> ts = anchor_ts + 2*(block-anchor).
 """
-import json, os, sys, time, contextlib, urllib.request, urllib.error, datetime as dt
+import json, os, sys, time, re, contextlib, urllib.request, urllib.error, datetime as dt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RPCS = [u for u in (os.environ.get("BASE_RPCS") or
@@ -51,22 +51,81 @@ def _pause(seconds):
     time.sleep(seconds)
 
 _PREFERRED = {}
+_DENIED = set()
+_COOLDOWN = {}
+LOG_CYCLE_SECONDS = 45
+LOG_SOCKET_SECONDS = 8
+CHECKPOINT_MARGIN_SECONDS = 5  # reserve for local persistence, not a hard fsync timeout
+
+def _hex(value, digits=None, quantity=False):
+    if not isinstance(value, str) or not re.fullmatch(r"0x[0-9a-fA-F]+", value):
+        return False
+    if digits is not None and len(value) != digits + 2:
+        return False
+    return not quantity or value == "0x0" or value[2] != "0"
+
+def _valid_result(method, value, params):
+    if method == "eth_getLogs":
+        if not isinstance(value, list) or not all(_transfer_valid(log) for log in value):
+            return False
+        if value:
+            if not params or not isinstance(params[0], dict):
+                return False
+            lower = int(params[0]["fromBlock"], 16)
+            upper = int(params[0]["toBlock"], 16)
+            if any(not lower <= int(log["blockNumber"], 16) <= upper for log in value):
+                return False
+        return True
+    if method == "eth_blockNumber":
+        return _hex(value, quantity=True)
+    if method == "eth_getBlockByNumber":
+        return (isinstance(value, dict) and _hex(value.get("number"), quantity=True)
+                and value["number"].lower() == params[0].lower()
+                and _hex(value.get("timestamp"), quantity=True)
+                and _hex(value.get("hash"), 64))
+    return False
+
+def _transfer_valid(log):
+    if not isinstance(log, dict):
+        return False
+    topics = log.get("topics")
+    return (isinstance(topics, list) and len(topics) == 3
+            and all(_hex(topic, 64) for topic in topics)
+            and topics[0].lower() == TOPIC
+            and all(topic[2:26] == "0" * 24 for topic in topics[1:])
+            and isinstance(log.get("address"), str) and log["address"].lower() == TOK
+            and log.get("removed") is False
+            and _hex(log.get("blockNumber"), quantity=True)
+            and _hex(log.get("blockHash"), 64)
+            and _hex(log.get("transactionHash"), 64)
+            and _hex(log.get("logIndex"), quantity=True)
+            and _hex(log.get("data"), 64))
+
 
 def rpc(method, params, timeout=20):
     body = json.dumps({"jsonrpc":"2.0","id":1,"method":method,"params":params}).encode()
     # Try every provider before shrinking: one provider's cap must not
     # suppress another provider that can serve the original range.
     last = "unavailable"
+    cycle_deadline = time.monotonic() + LOG_CYCLE_SECONDS if method == "eth_getLogs" else None
     for attempt in range(2):
         limited = False
         preferred = _PREFERRED.get(method)
         providers = ([preferred] if preferred in RPCS else []) + [u for u in RPCS if u != preferred]
         for url in providers:
+            key = (method, url)
+            if key in _DENIED or _COOLDOWN.get(key, 0) > time.monotonic():
+                continue
             try:
                 remaining = _remaining()
             except CrawlBudgetExceeded:
                 raise RuntimeError(f"rpc failed: {method} (budget before verified response)") from None
             request_timeout = timeout if remaining is None else min(timeout, remaining)
+            if cycle_deadline is not None:
+                cycle_remaining = cycle_deadline - time.monotonic()
+                if cycle_remaining <= 0:
+                    raise RuntimeError(f"rpc failed: {method} (request cycle exhausted)")
+                request_timeout = min(request_timeout, LOG_SOCKET_SECONDS, cycle_remaining)
             try:
                 req = urllib.request.Request(url.strip(), data=body, headers={"content-type":"application/json","User-Agent":"Mozilla/5.0 (moca-ledger/1.0; polite crawler)"})
                 try:
@@ -77,29 +136,52 @@ def rpc(method, params, timeout=20):
                     # Some providers return JSON range errors with HTTP 400.
                     # Do not print response bodies or configured endpoint URLs.
                     last = f"HTTP {e.code}"
+                    if e.code == 413:
+                        limited = True
+                    if e.code == 403:
+                        _DENIED.add(key)
+                        continue
+                    if e.code == 429:
+                        _COOLDOWN[key] = time.monotonic() + 30
+                        continue
                     try:
                         j = json.loads(e.read())
+                        error = j.get("error") if isinstance(j, dict) else None
+                        if isinstance(error, dict) and isinstance(error.get("message"), str) and _range_error(error["message"]):
+                            limited = True
+                        continue
                     except (ValueError, UnicodeError):
                         if e.code == 413:
                             limited = True
                         continue
+                if (not isinstance(j, dict) or j.get("jsonrpc") != "2.0"
+                        or type(j.get("id")) is not int or j["id"] != 1
+                        or ("result" in j) == ("error" in j)):
+                    last = "invalid response envelope"
+                    continue
                 if "result" in j:
-                    if method == "eth_getLogs" and not isinstance(j["result"], list):
-                        last = "invalid log result"
+                    if not _valid_result(method, j["result"], params):
+                        last = "invalid result"
                         continue
+                    if cycle_deadline is not None and time.monotonic() >= cycle_deadline:
+                        raise RuntimeError("request cycle expired before verified response")
+                    _remaining()
                     _PREFERRED[method] = url
                     return j["result"]
                 error = j.get("error", {})
-                if isinstance(error, dict) and _range_error(str(error.get("message", ""))):
+                if (isinstance(error, dict) and type(error.get("code")) is int
+                        and isinstance(error.get("message"), str) and _range_error(error["message"])):
                     limited = True
                 last = "provider rejected request"
             except CrawlBudgetExceeded:
-                raise
+                raise RuntimeError(f"rpc failed: {method} (budget before verified response)") from None
             except Exception:
                 last = "provider unavailable"
         if limited:
             raise ValueError("provider range limit")
         if attempt == 0:
+            if cycle_deadline is not None and cycle_deadline - time.monotonic() <= PACE + 1:
+                raise RuntimeError(f"rpc failed: {method} (request cycle exhausted)")
             try:
                 _pause(PACE + 1)
             except CrawlBudgetExceeded:
@@ -153,7 +235,9 @@ def _crawl(stack):
     while nxt <= target:
         to = min(nxt + win - 1, target)
         try:
-            _remaining()
+            remaining = _remaining()
+            if not range_rejected and remaining is not None and remaining <= LOG_CYCLE_SECONDS + CHECKPOINT_MARGIN_SECONDS:
+                return partial()
             logs = rpc("eth_getLogs", [{"fromBlock": hex(nxt), "toBlock": hex(to), "address": TOK, "topics": [TOPIC]}])
         except CrawlBudgetExceeded:
             if range_rejected:
@@ -172,8 +256,7 @@ def _crawl(stack):
         req += 1
         rows_by_day = {}; event_keys = set()
         for l in logs:
-            if (not isinstance(l, dict) or len(l.get("topics", [])) != 3
-                    or l["topics"][0].lower() != TOPIC or l.get("removed", False)):
+            if not _transfer_valid(l):
                 raise RuntimeError("rpc returned invalid Transfer event")
             bn = int(l["blockNumber"], 16)
             if not nxt <= bn <= to:
@@ -236,6 +319,7 @@ def main():
     if not 1 <= budget <= 240:
         raise ValueError("crawl budget must be between 1 and 240 seconds")
     prior = _DEADLINE
+    _PREFERRED.clear(); _DENIED.clear(); _COOLDOWN.clear()
     _DEADLINE = time.monotonic() + budget
     try:
         return _main()
