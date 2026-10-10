@@ -11,6 +11,35 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import crawl as C
 
 class CrawlRpc(unittest.TestCase):
+    def setUp(self): C._PREFERRED.clear()
+
+    def test_working_provider_sticky_per_method_and_fails_over(self):
+        calls=[]
+        def fetch(req, **kw):
+            calls.append(req.full_url)
+            if req.full_url.endswith("a.invalid"): raise RuntimeError("blocked")
+            return io.BytesIO(b'{"result":[]}')
+        with patch.object(C,"RPCS",["https://a.invalid","https://b.invalid"]),patch.object(C.urllib.request,"urlopen",side_effect=fetch):
+            C.rpc("eth_getLogs",[]); C.rpc("eth_getLogs",[])
+        self.assertEqual(calls,["https://a.invalid","https://b.invalid","https://b.invalid"])
+        self.assertNotIn("eth_blockNumber",C._PREFERRED)
+
+    def test_range_ceiling_persists_across_resume_without_repeat_growth(self):
+        with tempfile.TemporaryDirectory() as root:
+            state=os.path.join(root,"state.json"); widths=[]
+            with open(state,"w") as f:json.dump({"next_block":10,"rows_total":0,"win":400},f)
+            def rpc(method,params):
+                if method=="eth_blockNumber":return hex(459)
+                if method=="eth_getBlockByNumber":return {"timestamp":hex(1787307825)}
+                width=int(params[0]["toBlock"],16)-int(params[0]["fromBlock"],16)+1; widths.append(width)
+                if width>100:raise ValueError("provider range limit")
+                return []
+            with patch.multiple(C,HERE=root,DATA=os.path.join(root,"data"),STATE=state),patch.object(C,"rpc",side_effect=rpc),patch.object(C.time,"sleep"):C.main()
+            saved=json.load(open(state)); self.assertEqual(saved["range_ceiling"],100);self.assertEqual(widths,[400,200,100,100,100,100,20])
+            saved["next_block"]=10; json.dump(saved,open(state,"w"));widths.clear()
+            with patch.multiple(C,HERE=root,DATA=os.path.join(root,"data"),STATE=state),patch.object(C,"rpc",side_effect=rpc),patch.object(C.time,"sleep"):C.main()
+            self.assertEqual(widths,[100,100,100,100,20])
+
     def test_range_provider_does_not_hide_working_provider(self):
         replies = [io.BytesIO(b'{"error":{"message":"limited to 50 blocks"}}'),
                    io.BytesIO(b'{"result":[]}')]

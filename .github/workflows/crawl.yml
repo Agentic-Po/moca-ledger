@@ -38,11 +38,34 @@ jobs:
         id: crawl
         run: |
           set -o pipefail
-          python3 crawl.py 2>&1 | tail -5
+          rc=0
+          python3 crawl.py 2>&1 | tail -5 || rc=$?
+          if [ "$rc" = 75 ]; then
+            echo "partial=true" >> "$GITHUB_OUTPUT"
+          fi
+          exit "$rc"
+
+      - name: Validate incomplete catch-up checkpoint
+        id: checkpoint_gate
+        if: failure() && !cancelled() && steps.crawl.outputs.partial == 'true'
+        run: |
+          python3 catalog.py
+          python3 tests/test_pii.py --tree .
+
+      - name: Save incomplete catch-up checkpoint
+        if: failure() && !cancelled() && steps.crawl.outputs.partial == 'true' && steps.checkpoint_gate.outcome == 'success'
+        run: |
+          git config user.name "moca-ledger-bot"
+          git config user.email "actions@users.noreply.github.com" # pii-ok: github bot identity
+          git add -A
+          git diff --cached --quiet || git commit -q -m "crawl checkpoint (catch-up incomplete)"
+          git pull --rebase -q origin main
+          git push -q origin main
 
       # NEVER add `|| true` here. A failed restore means a stateless run, which
       # re-sends every finding the human already handled. It must stop the job.
       - name: Restore detector memory (private repo)
+        id: restore_memory
         env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
         run: python3 notify/state_sync.py pull
 
@@ -158,7 +181,7 @@ jobs:
 
 
       - name: Save detector memory (private repo)
-        if: always()
+        if: always() && !cancelled() && steps.restore_memory.outcome == 'success' && (steps.detect.outcome == 'success' || steps.detect.outcome == 'failure')
         env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
         run: python3 notify/state_sync.py push
 
