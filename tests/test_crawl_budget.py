@@ -6,6 +6,8 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import crawl as C
 
 class Budget(unittest.TestCase):
+    def setUp(self):
+        C._PREFERRED.clear(); C._DENIED.clear(); C._COOLDOWN.clear()
     def test_budget_sticky_ceiling_and_resume_integrate_without_replay_loss(self):
         clock=[0.0];requests=[]
         class Reply(io.BytesIO):
@@ -13,20 +15,20 @@ class Budget(unittest.TestCase):
         def fetch(req,timeout=None):
             body=json.loads(req.data);method=body['method'];params=body['params'];requests.append((req.full_url,method,params))
             if req.full_url.endswith('blocked.invalid'):
-                return Reply(b'{"error":{"message":"forbidden"}}')
+                return Reply(b'{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"forbidden"}}')
             clock[0]+=.2
             if method=='eth_blockNumber':value=hex(460)
-            elif method=='eth_getBlockByNumber':value={'timestamp':hex(1787307825)}
+            elif method=='eth_getBlockByNumber':value={'timestamp':hex(1787307825),'number':params[0],'hash':'0x'+'b'*64}
             else:
                 lo=int(params[0]['fromBlock'],16);hi=int(params[0]['toBlock'],16)
-                if hi-lo+1>100:return Reply(b'{"error":{"message":"block range limited to 100"}}')
+                if hi-lo+1>100:return Reply(b'{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"block range limited to 100"}}')
                 clock[0]+=4
-                value=[{'blockNumber':hex(lo),'transactionHash':'0x'+format(lo,'064x'),'logIndex':'0x0','topics':[C.TOPIC,'0x'+'0'*24+'1'*40,'0x'+'0'*24+'2'*40],'data':'0x1'}]
-            return Reply(json.dumps({'result':value}).encode())
+                value=[{'blockNumber':hex(lo),'transactionHash':'0x'+format(lo,'064x'),'logIndex':'0x0','topics':[C.TOPIC,'0x'+'0'*24+'1'*40,'0x'+'0'*24+'2'*40],'data':'0x'+'0'*63+'1','address':C.TOK,'removed':False,'blockHash':'0x'+'b'*64}]
+            return Reply(json.dumps({'jsonrpc':'2.0','id':1,'result':value}).encode())
         with tempfile.TemporaryDirectory() as root:
             state=Path(root)/'state.json';state.write_text(json.dumps({'next_block':10,'rows_total':0,'win':200}))
             C._PREFERRED.clear()
-            with patch.multiple(C,HERE=root,DATA=str(Path(root)/'data'),STATE=str(state),RPCS=['https://blocked.invalid','https://working.invalid']),patch.object(C.time,'monotonic',side_effect=lambda:clock[0]),patch.object(C.time,'sleep',side_effect=lambda seconds:clock.__setitem__(0,clock[0]+seconds)),patch.object(C.urllib.request,'urlopen',side_effect=fetch),patch.dict(os.environ,{'CRAWL_BUDGET_SECONDS':'12'}),contextlib.redirect_stdout(io.StringIO()):
+            with patch.multiple(C,HERE=root,DATA=str(Path(root)/'data'),STATE=str(state),RPCS=['https://blocked.invalid','https://working.invalid']),patch.object(C.time,'monotonic',side_effect=lambda:clock[0]),patch.object(C.time,'sleep',side_effect=lambda seconds:clock.__setitem__(0,clock[0]+seconds)),patch.object(C.urllib.request,'urlopen',side_effect=fetch),patch.dict(os.environ,{'CRAWL_BUDGET_SECONDS':'62'}),contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(C.main(),75)
                 first=json.loads(state.read_text());self.assertGreater(first['next_block'],10);self.assertEqual(first['range_ceiling'],100)
                 log_requests=[r for r in requests if r[1]=='eth_getLogs'];successful_floor=first['next_block'];self.assertEqual(sum(r[0].endswith('blocked.invalid') for r in log_requests),2)
@@ -40,7 +42,7 @@ class Budget(unittest.TestCase):
 
     def setup_case(self,root):
         state=Path(root)/'state.json';state.write_text(json.dumps({'next_block':10,'rows_total':0,'win':1}))
-        row={'blockNumber':'0xa','transactionHash':'0xabc','logIndex':'0x0','topics':[C.TOPIC,'0x'+'0'*24+'1'*40,'0x'+'0'*24+'2'*40],'data':'0x1'}
+        row={'blockNumber':'0xa','transactionHash':'0x'+'a'*64,'logIndex':'0x0','topics':[C.TOPIC,'0x'+'0'*24+'1'*40,'0x'+'0'*24+'2'*40],'data':'0x'+'0'*63+'1','address':C.TOK,'removed':False,'blockHash':'0x'+'b'*64}
         def rpc(method,params):
             if method=='eth_blockNumber':return hex(42)
             if method=='eth_getBlockByNumber':return {'timestamp':hex(1787307825+64)}
@@ -79,14 +81,14 @@ class Budget(unittest.TestCase):
             with self.assertRaises(C.CrawlBudgetExceeded):C.main()
             self.assertFalse((Path(root)/'state.json').exists());self.assertIsNone(C._DEADLINE)
     def test_rpc_deadline_limits_each_request_timeout(self):
-        with patch.object(C,'_DEADLINE',12),patch.object(C.time,'monotonic',return_value=10),patch.object(C.urllib.request,'urlopen',return_value=io.BytesIO(b'{"result":[]}')) as fetch:
+        with patch.object(C,'_DEADLINE',12),patch.object(C.time,'monotonic',return_value=10),patch.object(C.urllib.request,'urlopen',return_value=io.BytesIO(b'{"jsonrpc":"2.0","id":1,"result":[]}')) as fetch:
             self.assertEqual(C.rpc('eth_getLogs',[]),[]);self.assertEqual(fetch.call_args.kwargs['timeout'],2)
     def test_malformed_provider_json_is_not_range_or_budget(self):
         with patch.object(C,'RPCS',['https://invalid.example']),patch.object(C.urllib.request,'urlopen',side_effect=lambda *a,**kw:io.BytesIO(b'not JSON')),patch.object(C.time,'sleep'):
             with self.assertRaises(RuntimeError) as result:C.rpc('eth_getLogs',[])
             self.assertNotIsInstance(result.exception,(ValueError,C.CrawlBudgetExceeded))
     def test_provider_failure_at_budget_expiry_remains_failure(self):
-        times=iter([10,13])
+        times=iter([10,10,10,10,13,13,13,13,13,13])
         with patch.object(C,'_DEADLINE',12),patch.object(C.time,'monotonic',side_effect=lambda:next(times)),patch.object(C,'RPCS',['https://invalid.example']),patch.object(C.urllib.request,'urlopen',side_effect=lambda *a,**kw:io.BytesIO(b'not JSON')):
             with self.assertRaises(RuntimeError) as result:C.rpc('eth_getLogs',[])
             self.assertNotIsInstance(result.exception,C.CrawlBudgetExceeded)
@@ -108,6 +110,57 @@ class Budget(unittest.TestCase):
             with patch.multiple(C,HERE=root,DATA=str(Path(root)/'data'),STATE=str(state)),patch.object(C,'rpc',side_effect=limited),patch.object(C,'_pause'),patch.object(C,'_remaining',side_effect=[None,C.CrawlBudgetExceeded()]),contextlib.redirect_stdout(io.StringIO()) as output:
                 with self.assertRaises(RuntimeError):C.main()
             self.assertEqual(json.loads(state.read_text()),saved);self.assertNotIn('checkpoint saved',output.getvalue())
+    def test_clean_boundary_stops_before_a_new_rpc_and_resumes_exactly(self):
+        with tempfile.TemporaryDirectory() as root:
+            state,rpc=self.setup_case(root);calls=[]
+            def tracked(method,params):
+                calls.append(method);return rpc(method,params)
+            # Bootstrap is mocked; first range has its full allowance, second
+            # range cannot fit another 45-second cycle plus 5-second margin.
+            with patch.multiple(C,HERE=root,DATA=str(Path(root)/'data'),STATE=str(state)),patch.object(C,'rpc',side_effect=tracked),patch.object(C,'_remaining',side_effect=[51,49]),patch.object(C,'_pause'),contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(C.main(),75)
+            self.assertEqual(calls.count('eth_getLogs'),1)
+            self.assertEqual(json.loads(state.read_text())['next_block'],11)
+            self.assertEqual(sum(len(p.read_text().splitlines()) for p in (Path(root)/'data').glob('*.jsonl')),1)
+
+    def test_too_short_run_is_incomplete_without_claiming_progress(self):
+        with tempfile.TemporaryDirectory() as root:
+            state,rpc=self.setup_case(root);before=json.loads(state.read_text());calls=[]
+            def tracked(method,params):calls.append(method);return rpc(method,params)
+            with patch.multiple(C,HERE=root,DATA=str(Path(root)/'data'),STATE=str(state)),patch.object(C,'rpc',side_effect=tracked),patch.dict(os.environ,{'CRAWL_BUDGET_SECONDS':'40'}),contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(C.main(),75)
+            self.assertNotIn('eth_getLogs',calls);self.assertEqual(json.loads(state.read_text()),before)
+            self.assertIn('catch-up incomplete',out.getvalue());self.assertNotIn('done:',out.getvalue())
+
+    def test_failure_after_verified_prefix_cannot_become_partial(self):
+        with tempfile.TemporaryDirectory() as root:
+            state,rpc=self.setup_case(root);calls=[0]
+            def failed(method,params):
+                if method=='eth_getLogs':
+                    calls[0]+=1
+                    if calls[0]==2:raise RuntimeError('rpc failed: eth_getLogs (request cycle exhausted)')
+                return rpc(method,params)
+            with patch.multiple(C,HERE=root,DATA=str(Path(root)/'data'),STATE=str(state)),patch.object(C,'rpc',side_effect=failed),patch.object(C,'_pause'),contextlib.redirect_stdout(io.StringIO()) as out:
+                with self.assertRaises(RuntimeError):C.main()
+            self.assertEqual(json.loads(state.read_text())['next_block'],11)
+            self.assertNotIn('checkpoint saved',out.getvalue())
+
+    def test_invalid_transfer_fields_fail_before_any_range_write(self):
+        bad_fields={'address':'0x'+'0'*40,'removed':0,'topics':'not a list','blockNumber':True,
+                    'transactionHash':'0xabc','blockHash':None,'logIndex':'0x00','data':'0x1'}
+        for field,value in bad_fields.items():
+            with self.subTest(field=field),tempfile.TemporaryDirectory() as root:
+                state,rpc=self.setup_case(root)
+                def invalid(method,params):
+                    result=rpc(method,params)
+                    if method=='eth_getLogs':
+                        good=result[0];bad={**good,field:value};return [good,bad]
+                    return result
+                with patch.multiple(C,HERE=root,DATA=str(Path(root)/'data'),STATE=str(state)),patch.object(C,'rpc',side_effect=invalid),contextlib.redirect_stdout(io.StringIO()):
+                    with self.assertRaises(RuntimeError):C.main()
+                self.assertEqual(json.loads(state.read_text())['next_block'],10)
+                self.assertFalse(list((Path(root)/'data').glob('*.jsonl')))
+
     def test_budget_is_bounded(self):
         for value in ('0','241','nan'):
             with patch.dict(os.environ,{'CRAWL_BUDGET_SECONDS':value}):
