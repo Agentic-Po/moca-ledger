@@ -7,15 +7,15 @@
   "public": true,
   "kind": "ledger",
   "row_schema": "block, ts (unix), tx, li (log index), from, to, value (raw wei string)",
-  "rows": 502996,
+  "rows": 504366,
   "rows_closed": 351838,
-  "bytes": 126691066,
+  "bytes": 127035458,
   "coverage": {
    "from": "2026-07-06T09:17:13",
-   "to": "2026-10-10T02:50:35"
+   "to": "2026-10-10T05:00:03"
   },
-  "generated_iso": "2026-10-10T16:09:04Z",
-  "max_row_ts": "2026-10-10T02:50:35",
+  "generated_iso": "2026-10-10T16:13:16Z",
+  "max_row_ts": "2026-10-10T05:00:03",
   "expected_cadence_minutes": 10,
   "update_cadence": "every crawl (10-minute cron)",
   "provenance": "eth_getLogs over the MOCA contract on Base, adaptive window, resumable via state.json; timestamps derived from Base's fixed 2s block time (verified exact over 2M blocks)",
@@ -37,7 +37,7 @@
    "from": "2026-08-22T17:57:25",
    "to": "2026-10-04T12:45:13"
   },
-  "generated_iso": "2026-10-10T16:09:04Z",
+  "generated_iso": "2026-10-10T16:13:16Z",
   "max_row_ts": "2026-10-04T12:45:13",
   "expected_cadence_minutes": null,
   "update_cadence": "hand-maintained; changes ride with a PR",
@@ -60,7 +60,7 @@
    "from": "2026-10-08T10:18:17",
    "to": "2026-10-08T10:18:17"
   },
-  "generated_iso": "2026-10-10T16:09:04Z",
+  "generated_iso": "2026-10-10T16:13:16Z",
   "max_row_ts": "2026-10-08T10:18:17",
   "expected_cadence_minutes": 10,
   "update_cadence": "rewritten every crawl (10-minute cron)",
