@@ -9,6 +9,43 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from notify import health, weekly, watchdog, telegram, request_enrichment, state_sync
 
 class HealthDelivery(unittest.TestCase):
+    def test_failure_notice_copy_preserves_severity_state_and_receipts(self):
+        from copy import deepcopy
+        baseline={'open':{'synthetic':{'status':'acked'}},'last_failure_post':1,'last_run_ok':False}
+        states=[]
+        for published in (False,True):
+            with patch.object(telegram,'load_state',return_value=deepcopy(baseline)),patch.object(telegram.time,'time',return_value=30000),patch.object(telegram,'save_state') as save,patch.object(telegram,'send',return_value={'ok':True,'result':{'message_id':123}}) as send,patch.object(telegram,'_log_out') as receipt:
+                self.assertEqual(telegram.failure('https://example.invalid/run',checkpoint_published=published),0)
+                states.append(save.call_args.args[0]);self.assertFalse(send.call_args.kwargs['silent'])
+                self.assertEqual(receipt.call_args.args[1],'notice');self.assertEqual(send.call_count,1)
+                text=send.call_args.args[0];self.assertTrue(text.startswith('🔴'))
+                if published:
+                    self.assertIn('checkpoint saved',text);self.assertIn('detection did not run',text)
+                    self.assertNotIn('advanced',text);self.assertNotIn('healthy',text)
+                else:self.assertEqual(text,'🔴 <b>detector run failed</b>\nhttps://example.invalid/run')
+        self.assertEqual(states[0],states[1]);self.assertFalse(states[0]['last_run_ok'])
+        self.assertEqual(states[0]['open'],baseline['open'])
+
+    def test_failure_notice_dedup_policy_unchanged_for_both_copies(self):
+        for published in (False,True):
+            for last_ok,expected in ((True,0),(False,1)):
+                with patch.object(telegram,'load_state',return_value={'last_failure_post':100,'last_run_ok':last_ok}),patch.object(telegram.time,'time',return_value=101),patch.object(telegram,'save_state'),patch.object(telegram,'send',return_value={'ok':False}) as send,patch.object(telegram,'_log_out'):
+                    self.assertEqual(telegram.failure('https://example.invalid/run',checkpoint_published=published),0)
+                    self.assertEqual(send.call_count,expected)
+
+    def test_failure_before_restore_writes_only_local_state_and_receipt(self):
+        from notify import msglog
+        import io,contextlib
+        for published in (False,True):
+            with tempfile.TemporaryDirectory() as td:
+                root=Path(td);local=root/'msglog'
+                with patch.object(telegram,'STATE',root/'state.json'),patch.object(telegram,'send',return_value={'ok':True,'result':{'message_id':123}}),patch.object(msglog,'LOCAL',local),patch.object(msglog,'INDEX',local/'index.json'),patch.object(msglog,'_INDEX',None),patch.object(msglog,'_DIRTY',False),patch.dict(sys.modules,{'msglog':msglog}),patch.object(state_sync,'push') as detector_push,patch.object(msglog,'push') as receipt_push,patch.object(telegram.urllib.request,'urlopen',side_effect=AssertionError('unexpected network')) as network,contextlib.redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(telegram.failure('https://example.invalid/run',checkpoint_published=published),0)
+                    msglog.flush()
+                    self.assertTrue((root/'state.json').exists());self.assertTrue((local/'index.json').exists())
+                    detector_push.assert_not_called();receipt_push.assert_not_called();network.assert_not_called()
+                    self.assertNotIn('Coverage is still behind',output.getvalue())
+
     def test_retained_membership_warning(self):
         text = health.mindset_warning(dict(mindset_source='hashed-stale', mindset_generated_at='2026-10-01T12:00:00Z', mindset_age_h=70))
         self.assertIn('2026-10-01T12:00:00Z', text)

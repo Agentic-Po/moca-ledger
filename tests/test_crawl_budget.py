@@ -176,6 +176,30 @@ class Budget(unittest.TestCase):
                 env={**os.environ,'PATH':root+':'+os.environ['PATH'],'MOCK_RC':str(rc),'GITHUB_OUTPUT':str(output)}
                 result=subprocess.run(['bash','-e','-c',code],env=env,capture_output=True)
                 self.assertEqual(result.returncode,rc);self.assertEqual(output.read_text(),'partial=true\n' if rc==75 else '')
+    def test_catchup_notice_requires_validated_published_checkpoint(self):
+        text=Path(__file__).resolve().parents[1].joinpath('.github/workflows/crawl.yml').read_text()
+        section=text.split('      - name: Failure notice (deduped)',1)[1]
+        self.assertIn('if: failure()',section)
+        expression=next(line.split('${{',1)[1].split('}}',1)[0].strip() for line in section.splitlines() if 'CHECKPOINT_PUBLISHED:' in line)
+        for partial in ('true','false',''):
+            for validated in ('success','failure','skipped','cancelled',''):
+                for published in ('success','failure','skipped','cancelled',''):
+                    expr=expression
+                    for key,value in {'steps.crawl.outputs.partial':partial,'steps.checkpoint_gate.outcome':validated,'steps.checkpoint_save.outcome':published}.items():expr=expr.replace(key,repr(value))
+                    actual=eval(expr.replace('&&',' and '),{'__builtins__':{}})
+                    self.assertEqual(actual,partial=='true' and validated=='success' and published=='success')
+        code=section.split('        run: |',1)[1]
+        code='\n'.join(line[10:] for line in code.splitlines() if line.startswith('          '))
+        with tempfile.TemporaryDirectory() as root:
+            fake=Path(root)/'python3';fake.write_text('#!/bin/sh\nprintf \'%s\\n\' "$@" > "$CAPTURE_FILE"\nexit 1\n');fake.chmod(0o700)
+            for gate in ('true','false',''):
+                captured=Path(root)/'argv'
+                env={**os.environ,'PATH':root+':'+os.environ['PATH'],'CAPTURE_FILE':str(captured),'CHECKPOINT_PUBLISHED':gate,'RUN_URL':'https://example.invalid/run'}
+                result=subprocess.run(['bash','-e','-c',code],env=env,capture_output=True)
+                self.assertEqual(result.returncode,0)
+                args=captured.read_text().splitlines()
+                self.assertEqual(args,['notify/telegram.py','--failure','https://example.invalid/run']+(['--checkpoint-published'] if gate=='true' else []))
+
     def test_workflow_source_passes_original_pii_gate_and_rejects_bad_line(self):
         source=Path(os.environ.get('WORKFLOW_REVIEW_PATH',str(Path(__file__).resolve().parents[1]/'.github/workflows/crawl.yml'))).read_text()
         gate=Path(__file__).resolve().with_name('test_pii.py')
