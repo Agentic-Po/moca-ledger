@@ -74,7 +74,7 @@ class ClockTests(unittest.TestCase):
                 telegram.failure('https://example.invalid/run',published)
                 body=send.call_args.args[0]
                 if published:
-                    clock.assert_called_once(); self.assertIn('synthetic cutoff',body); self.assertIn('Coverage behind',body)
+                    clock.assert_called_once(); self.assertIn('synthetic cutoff',body); self.assertIn('🟡 <b>Data is catching up · checkpoint saved</b>',body); self.assertNotIn('🔴',body)
                 else:
                     clock.assert_not_called(); self.assertIn('detector run failed',body)
                 self.assertNotIn('@',body)

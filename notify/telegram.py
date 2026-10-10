@@ -938,9 +938,10 @@ def failure(url, checkpoint_published=False):
     s["last_failure_post"] = now; s["last_run_ok"] = False; save_state(s)
     if checkpoint_published:
         from notify.coverage_clock import cutoff_lines
-        text = "\n".join(["🔴 <b>Coverage behind · checkpoint saved</b>",
+        text = "\n".join(["🟡 <b>Data is catching up · checkpoint saved</b>",
                             *cutoff_lines(ROOT),
-                            "detection did not run on the remaining range.", url])
+                            "Checks have not run on the unscanned range yet.",
+                            "Existing scheduled runs will continue catching up.", url])
     else:
         text = f"🔴 <b>detector run failed</b>\n{url}"
     _log_out(send(text, silent=False), "notice"); return 0
