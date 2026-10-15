@@ -213,6 +213,12 @@ def _crawl(stack):
     st = load_state(); nxt = st["next_block"]; target = head - CONFIRM
     ceiling = st.get("range_ceiling")
     win = min(st.get("win", 1500), ceiling or 2000); files = {}; seen = {}
+    # A provider refusal is a hint, not a permanent cap on every future run.
+    # Probe once at the unchanged cursor; failure returns to the saved safe range.
+    saved_win = win
+    probing = bool(ceiling and ceiling < 1500 and target - nxt + 1 > ceiling)
+    if probing:
+        win = min(1500, target - nxt + 1)
     range_rejected = False
     log = stack.enter_context(open(os.path.join(HERE, "logs", "crawl.log"), "a"))
     def say(m):
@@ -244,6 +250,11 @@ def _crawl(stack):
                 raise RuntimeError("rpc failed: eth_getLogs (budget after range refusal)") from None
             return partial()
         except ValueError as e:
+            if probing:
+                probing = False
+                win = saved_win
+                say(f"shrink win->{win} (saved range after bounded probe)")
+                continue
             if win == 1:
                 raise RuntimeError("rpc failed: eth_getLogs at minimum range") from None
             range_rejected = True
@@ -290,6 +301,11 @@ def _crawl(stack):
                 files[d].write("\n".join(fresh) + "\n")
                 files[d].flush()
                 os.fsync(files[d].fileno())
+        if probing:
+            # Only a fully validated response may lift the old provider cap.
+            probing = False
+            ceiling = None
+            st.pop("range_ceiling", None)
         if range_rejected:
             ceiling = win
             st["range_ceiling"] = ceiling

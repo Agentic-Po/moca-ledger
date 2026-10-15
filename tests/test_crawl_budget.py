@@ -36,7 +36,10 @@ class Budget(unittest.TestCase):
                 with patch.dict(os.environ,{'CRAWL_BUDGET_SECONDS':'240'}):self.assertIsNone(C.main())
             final=json.loads(state.read_text());self.assertEqual(final['next_block'],431)
             resumed=[r for r in requests if r[1]=='eth_getLogs'];self.assertEqual(int(resumed[0][2][0]['fromBlock'],16),successful_floor)
-            self.assertTrue(all(int(r[2][0]['toBlock'],16)-int(r[2][0]['fromBlock'],16)+1<=100 for r in resumed))
+            wide=[r for r in resumed if int(r[2][0]['toBlock'],16)-int(r[2][0]['fromBlock'],16)+1>100]
+            self.assertLessEqual(len(wide),2)
+            self.assertTrue(all(int(r[2][0]['fromBlock'],16)==successful_floor for r in wide))
+            self.assertTrue(all(int(r[2][0]['toBlock'],16)-int(r[2][0]['fromBlock'],16)+1<=1500 for r in wide))
             rows=[json.loads(line) for p in (Path(root)/'data').glob('*.jsonl') for line in p.read_text().splitlines()]
             self.assertEqual(len(rows),len({(r['tx'],r['li']) for r in rows}));self.assertEqual(final['rows_total'],len(rows))
 

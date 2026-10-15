@@ -25,7 +25,7 @@ class CrawlRpc(unittest.TestCase):
         self.assertEqual(calls,["https://a.invalid","https://b.invalid","https://b.invalid"])
         self.assertNotIn("eth_blockNumber",C._PREFERRED)
 
-    def test_range_ceiling_persists_across_resume_without_repeat_growth(self):
+    def test_saved_range_bounds_resume_after_one_requalification_probe(self):
         with tempfile.TemporaryDirectory() as root:
             state=os.path.join(root,"state.json"); widths=[]
             with open(state,"w") as f:json.dump({"next_block":10,"rows_total":0,"win":400},f)
@@ -39,7 +39,21 @@ class CrawlRpc(unittest.TestCase):
             saved=json.load(open(state)); self.assertEqual(saved["range_ceiling"],100);self.assertEqual(widths,[400,200,100,100,100,100,20])
             saved["next_block"]=10; json.dump(saved,open(state,"w"));widths.clear()
             with patch.multiple(C,HERE=root,DATA=os.path.join(root,"data"),STATE=state),patch.object(C,"rpc",side_effect=rpc),patch.object(C.time,"sleep"):C.main()
-            self.assertEqual(widths,[100,100,100,100,20])
+            self.assertEqual(widths,[420,100,100,100,100,20])
+
+    def test_recovered_provider_lifts_old_tiny_ceiling_at_same_cursor(self):
+        with tempfile.TemporaryDirectory() as root:
+            state=os.path.join(root,'state.json');widths=[];starts=[]
+            with open(state,'w') as f:json.dump({'next_block':10,'rows_total':0,'win':37,'range_ceiling':37},f)
+            def rpc(method,params):
+                if method=='eth_blockNumber':return hex(2040)
+                if method=='eth_getBlockByNumber':return {'timestamp':hex(1787307825)}
+                lo=int(params[0]['fromBlock'],16);hi=int(params[0]['toBlock'],16)
+                starts.append(lo);widths.append(hi-lo+1);return []
+            with patch.multiple(C,HERE=root,DATA=os.path.join(root,'data'),STATE=state),patch.object(C,'rpc',side_effect=rpc),patch.object(C.time,'sleep'):C.main()
+            with open(state) as f:saved=json.load(f)
+            self.assertEqual(starts,[10,1510]);self.assertEqual(widths,[1500,501])
+            self.assertEqual(saved['next_block'],2011);self.assertNotIn('range_ceiling',saved)
 
     def test_range_provider_does_not_hide_working_provider(self):
         replies = [io.BytesIO(b'{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"limited to 50 blocks"}}'),
