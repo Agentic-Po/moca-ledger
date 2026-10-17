@@ -165,3 +165,7 @@ No new schedule, freshness guarantee, detection pass or healthy status is
 implied. Transfer timestamps produced by the crawler's block-spacing estimate
 remain labelled as estimated event times in the daily heartbeat. Genuine
 prepublication failures retain their original failure notice.
+
+## Failure and recovery confirmations
+
+The existing crawl workflow records failed episodes in the private companion's `state/run-health.json`, independently of detector memory, including failures before state restore and after data publication. Repeated warnings for the same failure stage are deduplicated. One receipt-confirmed recovery is sent only after the full run's detection, notification, private persistence, publication, dispatch and uptime stages succeed; routine successful runs remain quiet, separate from the daily heartbeat. Source cutoff and Singapore time are shown without claiming an all-clear. Sender, state and receipt failures never silently clear an episode. A Telegram send with an ambiguous outcome is not blindly repeated; its private delivery state remains explicitly unconfirmed. No new schedule or credential.

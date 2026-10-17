@@ -22,7 +22,7 @@ def _read(name):
     p = pathlib.Path.home() / ".moca-ledger" / name
     return p.read_text().strip() if p.exists() else ""
 
-def _post(method, data=None, files=None):
+def _post(method, data=None, files=None, attempts=3):
     try:
         from notify.message_text import outbound_fields
     except ImportError:
@@ -41,7 +41,7 @@ def _post(method, data=None, files=None):
         req = urllib.request.Request(url, data=body, headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
     else:
         req = urllib.request.Request(url, data=urllib.parse.urlencode(data or {}).encode())
-    for attempt in range(3):
+    for attempt in range(attempts):
         try:
             return json.load(urllib.request.urlopen(req, timeout=30))
         except urllib.error.HTTPError as e:
@@ -61,13 +61,13 @@ def _post(method, data=None, files=None):
                     wait = int(json.loads(body).get("parameters", {}).get("retry_after", 5))
                 except Exception:
                     private_print("telegram: 429 with an unparseable body — backing off 5s", file=sys.stderr)
-                if attempt == 2:
+                if attempt == attempts - 1:
                     return {"ok": False, "error": "http 429 (rate limited)"}
                 time.sleep(min(max(wait, 1), 30))
                 continue
-            return {"ok": False, "error": f"http {e.code}"}
+            return {"ok": False, "error": f"http {e.code}", "ambiguous": e.code >= 500}
         except Exception as ex:
-            if attempt == 2: return {"ok": False, "error": str(ex)[:80]}
+            if attempt == attempts - 1: return {"ok": False, "error": str(ex)[:80], "ambiguous": True}
             time.sleep(2)
     return {"ok": False, "error": "retries exhausted"}
 

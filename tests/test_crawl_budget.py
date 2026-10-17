@@ -201,7 +201,7 @@ class Budget(unittest.TestCase):
                 result=subprocess.run(['bash','-e','-c',code],env=env,capture_output=True)
                 self.assertEqual(result.returncode,0)
                 args=captured.read_text().splitlines()
-                self.assertEqual(args,['notify/telegram.py','--failure','https://example.invalid/run']+(['--checkpoint-published'] if gate=='true' else []))
+                self.assertEqual(args,['notify/run_health.py','--failure','https://example.invalid/run']+(['--checkpoint-published'] if gate=='true' else []))
 
     def test_workflow_source_passes_original_pii_gate_and_rejects_bad_line(self):
         source=Path(os.environ.get('WORKFLOW_REVIEW_PATH',str(Path(__file__).resolve().parents[1]/'.github/workflows/crawl.yml'))).read_text()
