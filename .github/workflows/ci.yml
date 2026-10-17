@@ -26,6 +26,8 @@ jobs:
         run: python3 tests/test_coverage_clock.py
       - name: Health delivery regression
         run: python3 -m unittest discover -s tests -p test_health_delivery.py
+      - name: Workflow recovery delivery regression
+        run: python3 -m unittest discover -s tests -p test_run_health.py
       - name: Reward policy regression
         run: python3 tests/test_reward_policy.py
       - name: PII gate

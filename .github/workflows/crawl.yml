@@ -74,10 +74,12 @@ jobs:
       # watchlist, mindset) lives in moca-ledger-private:oracle/ and is gitignored
       # here. Missing it silently changes what the detector sees, so it stops the job.
       - name: Restore automatic triage decisions
+        id: triage
         env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
         run: python3 notify/state_sync.py pull-triage
 
       - name: Restore detector oracle (private repo)
+        id: oracle
         env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
         run: python3 notify/state_sync.py pull-oracle
 
@@ -114,6 +116,7 @@ jobs:
       # STOPS the job on purpose. A leak is the one failure that cannot be undone —
       # members forward and deleteMessage recalls nothing — so not sending is right.
       - name: PII gate
+        id: privacy
         run: python3 tests/test_pii.py --tree .
 
       # Behaviour, not privacy: incident mode ends on its TTL, a cash-out gets a slot
@@ -136,6 +139,7 @@ jobs:
         run: python3 tests/test_notify.py
 
       - name: Notify (page/notify/digest)
+        id: notify
         if: hashFiles('notify/telegram.py') != ''
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -154,6 +158,7 @@ jobs:
           if [ "$BEHAVIOUR_GATE" = "failure" ]; then
             echo "alerting behaviour gate FAILED — alerts still going out, run will be red"
             python3 notify/telegram.py --gate-failed "$RUN_URL" || echo "could not announce the gate failure"
+            python3 notify/run_health.py --note behaviour_gate
             rc=1
           fi
           # Alerts must still go out even when the reply loop, the watchdog or the
@@ -166,27 +171,29 @@ jobs:
           # failed pull does NOT stop the job — the ledger is for matching, not for
           # deciding what to send, and push merges by line union rather than
           # overwriting, so a partial local copy cannot truncate the remote.
-          python3 notify/msglog.py pull || { echo "msglog pull exited non-zero"; rc=1; }
-          python3 notify/commands.py || { echo "commands.py exited non-zero"; rc=1; }
-          python3 notify/watchdog.py || { echo "watchdog.py exited non-zero"; rc=1; }
-          python3 notify/telegram.py --send-pending || { echo "telegram.py --send-pending exited non-zero"; rc=1; }
+          python3 notify/msglog.py pull || { echo "msglog pull exited non-zero"; python3 notify/run_health.py --note message_log; rc=1; }
+          python3 notify/commands.py || { echo "commands.py exited non-zero"; python3 notify/run_health.py --note reply_poll; rc=1; }
+          python3 notify/watchdog.py || { echo "watchdog.py exited non-zero"; python3 notify/run_health.py --note watchdog; rc=1; }
+          python3 notify/telegram.py --send-pending || { echo "telegram.py --send-pending exited non-zero"; python3 notify/run_health.py --note alerts; rc=1; }
           # Proof of life, once per UTC day, keyed off state — so calling it every run is
           # cheap and idempotent. The operator's ask: a channel that is silent for days cannot be
           # told apart from one that is dead. It refuses to be reassuring when the
           # detector is running but blind, and it goes red if it could not be delivered,
           # because the one message whose job is to prove we are not silent must not fail
           # silently itself.
-          python3 notify/telegram.py --heartbeat || { echo "heartbeat exited non-zero"; rc=1; }
-          python3 notify/msglog.py push || { echo "msglog push exited non-zero"; rc=1; }
+          python3 notify/telegram.py --heartbeat || { echo "heartbeat exited non-zero"; python3 notify/run_health.py --note daily_heartbeat; rc=1; }
+          python3 notify/msglog.py push || { echo "msglog push exited non-zero"; python3 notify/run_health.py --note message_log; rc=1; }
           exit $rc
 
 
       - name: Save detector memory (private repo)
+        id: save_memory
         if: always() && !cancelled() && steps.restore_memory.outcome == 'success' && (steps.detect.outcome == 'success' || steps.detect.outcome == 'failure')
         env: { PRIVATE_REPO_PAT: "${{ secrets.PRIVATE_REPO_PAT }}" }
         run: python3 notify/state_sync.py push
 
       - name: Commit state
+        id: publish
         run: |
           git config user.name  "moca-ledger-bot"
           git config user.email "actions@users.noreply.github.com"  # pii-ok: github bot identity
@@ -200,6 +207,7 @@ jobs:
       # After the commit on purpose: a rejected dispatch or a dropped state push is
       # a real error and goes red, but it must not cost the crawl its commit.
       - name: Request tier-2 enrichment (private side)
+        id: enrichment
         if: success()
         env:
           PRIVATE_REPO_PAT: ${{ secrets.PRIVATE_REPO_PAT }}
@@ -213,9 +221,22 @@ jobs:
       # silent no-op secrets survive. The skill-payout-dashboard repo has its
       # own separate check; see its RUNBOOK-deadman.md for the mapping.
       - name: Heartbeat ping (success)
+        id: uptime
         if: success()
         env: { HC_PING_URL: "${{ secrets.HC_PING_URL }}" }
         run: curl -fsS -m 10 --retry 2 "$HC_PING_URL" > /dev/null && echo pinged
+
+      # Completion is after data publication, private persistence, dispatch and uptime.
+      # This private episode record is independent of finding state restored above.
+      - name: Confirm recovery when needed
+        id: recovery
+        if: success() && steps.detect.outcome == 'success'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PRIVATE_REPO_PAT: ${{ secrets.PRIVATE_REPO_PAT }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 notify/run_health.py --success "$RUN_URL"
 
       - name: Heartbeat ping (failure)
         if: failure()
@@ -225,6 +246,9 @@ jobs:
       - name: Failure notice (deduped)
         if: failure()
         env:
+          PRIVATE_REPO_PAT: ${{ secrets.PRIVATE_REPO_PAT }}
+          NOTIFY_FAILURES: ${{ toJSON(steps.notify.outputs) }}
+          FAILURE_STAGE: ${{ steps.crawl.outcome == 'failure' && 'chain' || steps.restore_memory.outcome == 'failure' && 'state_restore' || steps.triage.outcome == 'failure' && 'triage_restore' || steps.oracle.outcome == 'failure' && 'oracle_restore' || steps.detect.outcome == 'failure' && 'detection' || steps.privacy.outcome == 'failure' && 'privacy_gate' || steps.save_memory.outcome == 'failure' && 'state_persistence' || steps.publish.outcome == 'failure' && 'publication' || steps.enrichment.outcome == 'failure' && 'enrichment_dispatch' || steps.uptime.outcome == 'failure' && 'uptime_ping' || steps.recovery.outcome == 'failure' && 'recovery_tracking' || 'workflow' }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -232,4 +256,4 @@ jobs:
         run: |
           args=(--failure "$RUN_URL")
           if [ "$CHECKPOINT_PUBLISHED" = "true" ]; then args+=(--checkpoint-published); fi
-          python3 notify/telegram.py "${args[@]}" || true
+          python3 notify/run_health.py "${args[@]}" || true
