@@ -1,6 +1,7 @@
 {
- "next_block": 52927230,
- "rows_total": 662644,
+ "next_block": 52928133,
+ "rows_total": 662948,
  "started": "2026-08-21T12:52:46.225909+00:00",
- "win": 2000
+ "win": 1000,
+ "range_ceiling": 1000
 }
