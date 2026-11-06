@@ -7,14 +7,14 @@
   "public": true,
   "kind": "ledger",
   "row_schema": "block, ts (unix), tx, li (log index), from, to, value (raw wei string)",
-  "rows": 835437,
+  "rows": 835442,
   "rows_closed": 799739,
-  "bytes": 210249165,
+  "bytes": 210250417,
   "coverage": {
    "from": "2026-07-06T09:17:13",
    "to": "2026-11-06T08:32:28"
   },
-  "generated_iso": "2026-11-06T08:35:02Z",
+  "generated_iso": "2026-11-06T08:38:27Z",
   "max_row_ts": "2026-11-06T08:32:28",
   "expected_cadence_minutes": 10,
   "update_cadence": "every crawl (10-minute cron)",
@@ -37,7 +37,7 @@
    "from": "2026-08-22T17:57:25",
    "to": "2026-10-04T12:45:13"
   },
-  "generated_iso": "2026-11-06T08:35:02Z",
+  "generated_iso": "2026-11-06T08:38:27Z",
   "max_row_ts": "2026-10-04T12:45:13",
   "expected_cadence_minutes": null,
   "update_cadence": "hand-maintained; changes ride with a PR",
@@ -55,13 +55,13 @@
   "row_schema": "run_ts, crawl_ok, rows_total, ledger_last, lag_blocks",
   "rows": 1,
   "rows_closed": 0,
-  "bytes": 195,
+  "bytes": 196,
   "coverage": {
-   "from": "2026-11-06T08:35:01",
-   "to": "2026-11-06T08:35:01"
+   "from": "2026-11-06T08:38:27",
+   "to": "2026-11-06T08:38:27"
   },
-  "generated_iso": "2026-11-06T08:35:02Z",
-  "max_row_ts": "2026-11-06T08:35:01",
+  "generated_iso": "2026-11-06T08:38:27Z",
+  "max_row_ts": "2026-11-06T08:38:27",
   "expected_cadence_minutes": 10,
   "update_cadence": "rewritten every crawl (10-minute cron)",
   "provenance": "written by the crawl-detect-notify workflow at the end of each run",
