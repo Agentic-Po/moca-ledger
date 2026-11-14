@@ -6,10 +6,10 @@ on:
 permissions: { contents: write }
 jobs:
   keepalive:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { ref: main }
       # Open findings are detector status and live only in the private state now
       # (notify/health.py). Read-only pull; this job never pushes the state. A failed
