@@ -40,6 +40,8 @@ jobs:
         run: python3 notify/state_sync.py pull-oracle
       - name: Quiet-log gate (no detector status in public Actions logs)
         run: python3 tests/test_quiet_logs.py
+      - name: Lossless state transport regression
+        run: python3 -m unittest discover -s tests -p test_state_codec.py
       - name: State gate (size cap, restore fallback, no enrichment re-dispatch)
         run: python3 tests/test_state.py
       # Also runs inside crawl.yml, but that is every ten minutes on the live channel.
