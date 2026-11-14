@@ -193,4 +193,29 @@ class TypedAndBudgetRpc(unittest.TestCase):
             with self.assertRaises(RuntimeError):C.rpc('eth_getLogs',[])
         self.assertNotIn('eth_getLogs',C._PREFERRED)
 
+class DenimTimestampTests(unittest.TestCase):
+    def test_current_head_phase_and_legacy_dates(self):
+        with patch.multiple(C,ANCHOR_BLOCK=57137205,ANCHOR_TS=1794617816):
+            for block,stamp in ((47829036,1782447419),(53556126,1793901599),(53556127,1793901601),(53556131,1793901601),(53556132,1793901602)):
+                self.assertEqual(C.ts_of(block),stamp)
+    def test_incompatible_head_fails_before_timestamp_inference(self):
+        with patch.multiple(C,ANCHOR_BLOCK=57137205,ANCHOR_TS=1794617817):
+            with self.assertRaises(RuntimeError):C.ts_of(57137205)
+
+class TimestampRestatementTests(unittest.TestCase):
+    def test_repartition_preserves_event_fields_and_is_idempotent(self):
+        from pathlib import Path
+        from tools.repair_denim_timestamps import repair
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'data').mkdir()
+            row={'block':53556132,'ts':1,'tx':'0x'+'a'*64,'li':0,'from':'0x'+'1'*40,'to':'0x'+'2'*40,'value':'123'}
+            (root/'data/1970-01-01.jsonl').write_text(json.dumps(row)+'\n')
+            report=repair(root,True)
+            self.assertEqual(report,{'rows':1,'timestamps_corrected':1,'rows_repartitioned':1,'event_preservation':True})
+            fixed=json.loads((root/'data/2026-11-05.jsonl').read_text())
+            self.assertEqual({k:v for k,v in fixed.items() if k!='ts'},{k:v for k,v in row.items() if k!='ts'})
+            self.assertEqual(fixed['ts'],1793901602)
+            self.assertEqual((root/'data/1970-01-01.jsonl').read_text(),'')
+            self.assertEqual(repair(root,True)['timestamps_corrected'],0)
+
 if __name__=='__main__':unittest.main()

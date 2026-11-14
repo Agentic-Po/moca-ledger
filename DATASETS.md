@@ -13,7 +13,7 @@ Rows, bytes and coverage are measured off the files, never asserted.
 
 **`ledger`** — block, ts (unix), tx, li (log index), from, to, value (raw wei string)
 
-- provenance: eth_getLogs over the MOCA contract on Base, adaptive window, resumable via state.json; timestamps derived from Base's fixed 2s block time (verified exact over 2M blocks)
+- provenance: eth_getLogs over the MOCA contract on Base, adaptive window, resumable via state.json; timestamps derived from qualified legacy 2s and Denim 200ms block eras
 - not included: MOCA Transfer events only — no other token, no ETH, no internal calls, and no USD pricing (this repo never prices a row)
 
 ## oracle
