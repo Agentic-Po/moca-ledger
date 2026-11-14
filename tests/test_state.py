@@ -15,7 +15,7 @@ incident it exists for:
 
 Usage:  python3 tests/test_state.py        (exit 1 on any failure)
 """
-import base64, io, json, os, pathlib, sys, tempfile, urllib.error, urllib.request
+import base64, io, json, os, pathlib, random, sys, tempfile, urllib.error, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -59,7 +59,7 @@ def finding(i, settled=False, fat=0):
     if settled:
         f["ack_by"] = "go-live-seed"; f["ack_ts"] = "2026-08-22T09:00:00+00:00"
     if fat:
-        f["padding"] = "x" * fat
+        f["padding"] = random.Random(i).randbytes(fat).hex()
     return f
 
 
@@ -75,7 +75,7 @@ def synthetic_state(n, settled_from=0, fat=0):
 
 def test_prune_brings_a_1_5mb_state_under_the_cap():
     st = synthetic_state(1700, settled_from=100)
-    before = state_sync._size(st)
+    before = len(json.dumps(st, indent=1).encode())
     check("fixture really is >1.5 MB", before > 1_500_000, f"{before} bytes")
     st = state_sync.prune(st)
     after = state_sync._size(st)
@@ -131,7 +131,7 @@ def test_live_state_fits_the_budget_at_max_open():
     n = len(s.get("open") or {})
     if not n:
         print("  SKIP  live-state budget check (no open findings)"); return
-    avg = live.stat().st_size / n
+    avg = state_sync._size(s) / n
     projected = avg * state_sync.MAX_OPEN
     check("MAX_OPEN findings at today's average size still fit the byte budget",
           projected < state_sync.MAX_BYTES,

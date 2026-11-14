@@ -41,9 +41,9 @@ def _req(method, body=None, api=None):
     return json.load(urllib.request.urlopen(r, timeout=30))
 
 try:
-    from .state_codec import decode_bytes, decode_state
+    from .state_codec import decode_bytes, decode_state, encode_state
 except ImportError:
-    from state_codec import decode_bytes, decode_state
+    from state_codec import decode_bytes, decode_state, encode_state
 
 MAX_OPEN   = 600          # findings kept in `open`; older settled ones move to a counter
 KEEP_MSGS  = 300          # message_id -> case entries kept for reply targeting
@@ -64,7 +64,7 @@ def _settled(f):
 
 
 def _size(state):
-    return len(json.dumps(state, indent=1).encode())
+    return len(encode_state(state))
 
 
 def prune(state):
@@ -95,7 +95,16 @@ def prune(state):
     over = False
     while keep:                                   # byte budget, enforced not assumed
         state["open"] = dict(keep)
-        if _size(state) <= MAX_BYTES:
+        # Include the retirement receipt in the budget before deciding it fits.
+        candidate = dict(state)
+        if dropped:
+            candidate["retired"] = (state.get("retired") or 0) + len(dropped)
+            notice = state.get("retired_notice") or {"total": 0, "unacked": 0}
+            candidate["retired_notice"] = {
+                "total": int(notice.get("total", 0)) + len(dropped),
+                "unacked": int(notice.get("unacked", 0)) + sum(not _settled(f) for _, f in dropped),
+            }
+        if _size(candidate) <= MAX_BYTES:
             break
         if len(keep) <= MIN_KEEP:
             over = True; break                    # something other than `open` is the bulk
@@ -342,14 +351,14 @@ def push():
     sha = sha_f.read_text().strip() if sha_f.exists() else None
     detail = "unknown"
     for attempt in range(3):
-        content = base64.b64encode(json.dumps(st, indent=1).encode()).decode()
+        content = base64.b64encode(encode_state(st)).decode()
         body = {"message": f"state {os.environ.get('GITHUB_RUN_ID','local')}", "content": content}
         if sha: body["sha"] = sha
         try:
             d = _req("PUT", body)
             sha_f.write_text(d["content"]["sha"])
             STATE.write_text(json.dumps(st, indent=1))
-            private_print(f"state: pushed {len(st.get('open', {}))} findings, {STATE.stat().st_size} bytes",
+            private_print(f"state: pushed {len(st.get('open', {}))} findings, {_size(st)} stored bytes",
                           public="state: pushed")
             return True
         except urllib.error.HTTPError as e:

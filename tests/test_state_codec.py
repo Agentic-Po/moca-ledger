@@ -49,3 +49,37 @@ class StateSyncReaderTests(unittest.TestCase):
                 self.assertFalse(s.pull())
                 self.assertIsNone(s._remote_state())
                 self.assertEqual(s.STATE.read_bytes(),before)
+
+class StateSyncWriterTests(unittest.TestCase):
+    def test_push_preserves_evidence_and_merges_concurrent_legacy_or_compressed(self):
+        import tempfile
+        import urllib.error
+        from pathlib import Path
+        from notify import state_sync as s
+        local={'open':{'local':{'id':'local','verification_txs':['proof']}}}
+        remote={'open':{'remote':{'id':'remote','status':'watching','ack_note':'retain'}}}
+        for remote_raw in (json.dumps(remote).encode(),c.encode_state(remote)):
+            with tempfile.TemporaryDirectory() as td, patch.object(s,'STATE',Path(td)/'state.json'), patch.object(s,'_pat',return_value='synthetic'), patch.object(s.time,'sleep'):
+                s.STATE.write_text(json.dumps(local))
+                calls=[]
+                def request(method,body=None):
+                    if method=='GET':return {'content':base64.b64encode(remote_raw).decode(),'sha':'current'}
+                    calls.append(body)
+                    if len(calls)==1:raise urllib.error.HTTPError('synthetic',409,'conflict',{},None)
+                    return {'content':{'sha':'saved'}}
+                with patch.object(s,'_req',side_effect=request):self.assertTrue(s.push())
+                saved=c.decode_state(base64.b64decode(calls[-1]['content']))
+                self.assertEqual(saved['open'],{**remote['open'],**local['open']})
+                self.assertEqual(json.loads(s.STATE.read_bytes()),saved)
+                self.assertEqual(calls[-1]['sha'],'current')
+                self.assertIn('state_encoding',json.loads(base64.b64decode(calls[-1]['content'])))
+    def test_unreadable_concurrent_state_is_never_overwritten(self):
+        import tempfile
+        import urllib.error
+        from pathlib import Path
+        from notify import state_sync as s
+        with tempfile.TemporaryDirectory() as td, patch.object(s,'STATE',Path(td)/'state.json'), patch.object(s,'_pat',return_value='synthetic'):
+            s.STATE.write_text('{"open":{}}')
+            with patch.object(s,'_req',side_effect=urllib.error.HTTPError('synthetic',409,'conflict',{},None)) as req, patch.object(s,'_remote_state',return_value=None):
+                self.assertFalse(s.push())
+                self.assertEqual(req.call_count,1)
