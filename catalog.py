@@ -144,7 +144,7 @@ PUBLIC = [
     dict(name="ledger", path=["data/"], kind="ledger", live=True, measure=_ledger_stamps,
          row_schema="block, ts (unix), tx, li (log index), from, to, value (raw wei string)",
          update_cadence="every crawl (10-minute cron)", expected_cadence_minutes=10,
-         provenance="eth_getLogs over the MOCA contract on Base, adaptive window, resumable via state.json; timestamps derived from Base's fixed 2s block time (verified exact over 2M blocks)",
+         provenance="eth_getLogs over the MOCA contract on Base, adaptive window, resumable via state.json; timestamps derived from qualified legacy 2s and Denim 200ms block eras",
          not_included="MOCA Transfer events only — no other token, no ETH, no internal calls, and no USD pricing (this repo never prices a row)"),
     dict(name="labels", path=["labels/"], kind="oracle", live=False, measure=_label_stamps,
          row_schema="public_addresses.json: infrastructure[], token_contracts{}, event_topics{}; allowlist.json; calendar.json: campaign windows",

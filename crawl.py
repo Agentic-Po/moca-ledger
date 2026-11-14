@@ -6,7 +6,7 @@
 - Pace: >= PACE seconds between requests + exponential backoff on 429/5xx.
 - Output: data/YYYY-MM-DD.jsonl  (one JSON row per transfer, UTC day by block ts)
 - State: state.json {next_block, head_at_start, rows_total}. Re-run to resume / catch up.
-Timestamps: Base produces a block every 2 s deterministically -> ts = anchor_ts + 2*(block-anchor).
+Timestamps: certified legacy 2-second and Denim 200-millisecond canonical block eras.
 """
 import json, os, sys, time, re, contextlib, urllib.request, urllib.error, datetime as dt
 
@@ -188,7 +188,20 @@ def rpc(method, params, timeout=20):
                 raise RuntimeError(f"rpc failed: {method} (budget after provider failure)") from None
     raise RuntimeError(f"rpc failed: {method} ({last})")
 
-def ts_of(block):  return ANCHOR_TS + 2 * (block - ANCHOR_BLOCK)
+DENIM_BLOCK, DENIM_TS = 53556127, 1793901601
+
+def ts_of(block):
+    # https://docs.base.org/upgrades/denim/200ms-blocks
+    # Boundary checked on both existing Base providers; whole-second headers
+    # repeat across five successive Denim blocks. Never round the head phase.
+    if ANCHOR_BLOCK < DENIM_BLOCK:
+        transition = ANCHOR_TS + 2 * (DENIM_BLOCK - ANCHOR_BLOCK)
+    else:
+        transition = DENIM_TS
+        if ANCHOR_TS != DENIM_TS + (ANCHOR_BLOCK - DENIM_BLOCK) // 5:
+            raise RuntimeError("block timestamp era not qualified")
+    return (transition + 2 * (block-DENIM_BLOCK) if block < DENIM_BLOCK
+            else transition + (block-DENIM_BLOCK) // 5)
 def day_of(block): return dt.datetime.fromtimestamp(ts_of(block), dt.UTC).strftime("%Y-%m-%d")
 
 def load_state():
@@ -210,6 +223,7 @@ def _crawl(stack):
     os.makedirs(os.path.join(HERE, "logs"), exist_ok=True)
     head = int(rpc("eth_blockNumber", []), 16)
     b = rpc("eth_getBlockByNumber", [hex(head), False]); ANCHOR_BLOCK, ANCHOR_TS = head, int(b["timestamp"], 16)
+    ts_of(head)  # fail before any append if the observed head violates the qualified era
     st = load_state(); nxt = st["next_block"]; target = head - CONFIRM
     ceiling = st.get("range_ceiling")
     win = min(st.get("win", 1500), ceiling or 2000); files = {}; seen = {}

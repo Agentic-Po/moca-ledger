@@ -25,7 +25,7 @@ organic baselines computed from the same ledger.
 | `notify/selftest.py` | Daily end-to-end proof that an alert can still reach the channel |
 | `.github/workflows/` | 10-minute crawl + detect + notify loop, CI, daily self-test, weekly keep-alive |
 
-Timestamps are derived from Base's fixed 2 s block time (verified exact over 2M blocks),
+Timestamps use Base's qualified legacy 2 s and Denim 200 ms block eras (see TIMESTAMP_RESTATEMENT.md),
 so the crawler needs one RPC call per window and no per-block lookups.
 
 ## What is deliberately **not** here
