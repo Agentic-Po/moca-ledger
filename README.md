@@ -169,3 +169,14 @@ prepublication failures retain their original failure notice.
 ## Failure and recovery confirmations
 
 The existing crawl workflow records failed episodes in the private companion's `state/run-health.json`, independently of detector memory, including failures before state restore and after data publication. Repeated warnings for the same failure stage are deduplicated. One receipt-confirmed recovery is sent only after the full run's detection, notification, private persistence, publication, dispatch and uptime stages succeed; routine successful runs remain quiet, separate from the daily heartbeat. Source cutoff and Singapore time are shown without claiming an all-clear. Sender, state and receipt failures never silently clear an episode. A Telegram send with an ambiguous outcome is not blindly repeated; its private delivery state remains explicitly unconfirmed. No new schedule or credential.
+
+### Private state storage format
+
+The private detector state uses the versioned `moca-state-gzip-v1` envelope:
+lossless gzip plus base64, decoded byte length, and SHA-256 checksum. Local
+`alerts/state.json` remains ordinary JSON. Both production readers accept legacy
+JSON; deploy compatible readers before enabling a writer or rolling back code.
+Never point an older reader at compressed state. The byte budget and live capacity
+projection measure the stored envelope, including its encoding overhead. Count
+limits and evidence fields are unchanged. Corrupt, unknown, or oversized packets
+fail closed, including during concurrent-write recovery.
