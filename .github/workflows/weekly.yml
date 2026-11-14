@@ -10,6 +10,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with: { ref: main }
       # Open findings are detector status and live only in the private state now
       # (notify/health.py). Read-only pull; this job never pushes the state. A failed
       # pull only costs the weekly message its open-findings line.

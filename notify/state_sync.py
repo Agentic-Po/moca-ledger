@@ -40,6 +40,11 @@ def _req(method, body=None, api=None):
                                         "Content-Type": "application/json"})
     return json.load(urllib.request.urlopen(r, timeout=30))
 
+try:
+    from .state_codec import decode_bytes, decode_state
+except ImportError:
+    from state_codec import decode_bytes, decode_state
+
 MAX_OPEN   = 600          # findings kept in `open`; older settled ones move to a counter
 KEEP_MSGS  = 300          # message_id -> case entries kept for reply targeting
 MAX_BYTES  = 900_000      # the Contents API stops serving inline content at 1 MB
@@ -139,7 +144,7 @@ def pull():
             raw = urllib.request.urlopen(urllib.request.Request(
                 url, headers={"Authorization": f"Bearer {_pat()}"}), timeout=30).read()
             private_print(f"state: inline content omitted (>1 MB) — restored {len(raw)} bytes via download_url")
-        json.loads(raw)                          # never write a file we cannot parse
+        raw = decode_bytes(raw)                  # fail closed before changing local state
         STATE.parent.mkdir(parents=True, exist_ok=True)
         STATE.write_bytes(raw)
         (STATE.parent / ".state_sha").write_text(d["sha"])
@@ -260,7 +265,7 @@ def _remote_state():
             if not url: return None
             raw = urllib.request.urlopen(urllib.request.Request(
                 url, headers={"Authorization": f"Bearer {_pat()}"}), timeout=30).read()
-        return json.loads(raw), d.get("sha")
+        return decode_state(raw), d.get("sha")
     except Exception as e:
         private_print(f"state: could not read the concurrent write ({type(e).__name__})")
         return None
@@ -358,7 +363,9 @@ def push():
                     private_print(f"state: conflict — merged with the concurrent write "
                           f"({before} -> {len(st.get('open', {}))} findings)")
                 else:
-                    sha = _remote_sha()
+                    private_print("state: conflict read failed — refusing to overwrite unreadable state",
+                                  public="state: conflict read failed — refusing to overwrite unreadable state")
+                    return False
         except Exception as e:
             detail = type(e).__name__
         if attempt < 2:

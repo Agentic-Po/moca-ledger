@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 1 }
+        with: { fetch-depth: 1, ref: main }
 
       - name: Heartbeat ping (start)
         env: { HC_PING_URL: "${{ secrets.HC_PING_URL }}" }
