@@ -5,15 +5,15 @@ on:
 permissions: { contents: read }
 jobs:
   gate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         # Full history: catalog.py dates labels/ by each file's last COMMIT,
         # which a shallow clone cannot see (it then carries the committed
         # values, making the catalog gate below vacuous for that dataset).
         with: { fetch-depth: 0 }
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with: { python-version: "3.12" }
       - run: pip install -q -r requirements.txt
       - name: Crawl provider and checkpoint regression

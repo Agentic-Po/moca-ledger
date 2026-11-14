@@ -14,17 +14,17 @@ concurrency:
 
 jobs:
   run:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { fetch-depth: 1, ref: main }
 
       - name: Heartbeat ping (start)
         env: { HC_PING_URL: "${{ secrets.HC_PING_URL }}" }
         run: curl -fsS -m 10 "$HC_PING_URL/start" > /dev/null || true
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with: { python-version: "3.12", cache: pip }
 
       - name: Install deps
