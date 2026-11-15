@@ -1,15 +1,15 @@
 {
  "note": "USD prices from DeFiLlama, fetched at most once a day and committed so past alerts can be re-priced exactly as they were sent. Read by detect/run.py and notify/explain.py; a stale cache is marked in the copy, never silently trusted.",
  "source": "https://coins.llama.fi/prices/current/",
- "fetched_at": "2026-11-14T13:08:44Z",
- "date": "2026-11-14",
+ "fetched_at": "2026-11-15T13:38:29Z",
+ "date": "2026-11-15",
  "prices": {
-  "MENTE": 0.01716756,
-  "MOCA": 0.00674012
+  "MENTE": 0.01690929,
+  "MOCA": 0.00626555
  },
  "confidence": {
   "MENTE": 0.99,
-  "MOCA": 0.99
+  "MOCA": 0.999
  },
  "coins": {
   "MOCA": "base:0x2b11834ed1feaed4b4b3a86a6f571315e25a884d",
