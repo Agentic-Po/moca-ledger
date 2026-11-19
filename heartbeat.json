@@ -1,8 +1,8 @@
 {
- "run_ts": "2026-11-19T16:09:03+00:00",
+ "run_ts": "2026-11-19T16:38:47+00:00",
  "note": "run health only; detector status is private",
  "crawl_ok": null,
- "rows_total": 933707,
- "ledger_last": "2026-11-19 16:07",
- "lag_blocks": 36
+ "rows_total": 933861,
+ "ledger_last": "2026-11-19 16:37",
+ "lag_blocks": 30
 }
